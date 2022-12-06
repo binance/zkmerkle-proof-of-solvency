@@ -1,0 +1,9 @@
+{
+  "PostgresDataSource" : "host=127.0.0.1 user=postgres password=zkpos@123 dbname=zkpos port=5432 sslmode=disable",
+  "Redis": {
+    "Host": "127.0.0.1:6379",
+    "Type": "node"
+  },
+  "DbSuffix": "0",
+  "ZkKeyName": "/server/data/.keys/zkpor864"
+}
