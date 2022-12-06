@@ -1,0 +1,9 @@
+{
+  "AccountIndex": 9,
+  "AccountIdHash": "0000041cb7323211d0b356c2fe6e79fdaf0c27d74b3bb1a4635942f9ae92145b",
+  "Root": "29591ef3a9ed02605edd6ab14f5dd49e7dbe0d03e72a27383f929ef3efb7514f",
+  "Assets": [{"Index":7,"Equity":123456000,"Debt":0}],
+  "Proof": ["DrPpFsm4/5HntRTf8M3dbgpdrxq3Q8lZkB2ngysW2js=","G1WgD/CvmGApQgmIX0rE0BlSifkw6IfNwY9z2DnRazM=","HZm8N563lDMrx//oMjejlXKLzLrZQRqKZKyXwpDnT+I=","A+wqmnw0NfdgAyEieZRqKlczF48VOROxME36YBwLhmY=","BaLA62VkWlLE/FZTxnvx/lwU7WNfDxgdM2cBw27MAog=","EvkbbZF7Y/W8AxPc+49lmzzFNdyPl1QWRu1ZQB/gmz8=","EJzsNkrzgcB6LIctzoqWAetzLHO57vx00FxIlLKhwqg=","D3kGOz1Xcsi5hGXr02LOSC23L+lCOhq6FlXGiPYcYig=","DSAmcCy6GEl1DlRNpP05e4I9ScMCz/4DtJCKpserVL8=","L16LdkqEmjI/4uVNETm4ScZ5uA/Cho59zjbgN1OgI+k=","CaRuyDB3b3JeZlItZw8Txi7MSP5vyRpco0OtHRuO6RQ=","CkfKeaCV6rLcskjWE91vCAxTPKEymsDtJvc4r8aWytw=","JfAF+uLGIBAJklZrWRPjxmJ3lFHyau9oNL5dOwQ72kQ=","JKQm66yeIFuPJcm5OkTUDyohsL5CWFF+fFpW/NiS2O0=","KXs+zCQELaQRJzQoCnYm+G2lr5eKLqmWd3G0xeSPWgc=","AFL9l/1p5puhKsCtS7WTT/hExtl3hmRfXnTofVY9+3s=","A2lctbb1mGsAgbERpnu4/RKX/OkcU06dhU9l4wS7e8k=","AIB1T+2rEytbSyMLfyp1rNhS0RCmPYwITdjhb/34FVQ=","GQmXAAvuoPUvt4zDrQ9qaAcRV5t8TPFXAIAIuwv0vr0=","J8pP9A0l54qj9UfumcTXn3hVBYEh+iBH03newr296io=","LD/99JpY8ZZupXaoRt6p6wKDmQepQyVMsJ3s5rX+Q9g=","EOqvnEUbpnzF0HeEv0PdB/R3KMbNU15jYqwNaBJ/j7M=","KLZwBqvYBNFPBFVPQQOipuYd9bYdLEme+Y5UiDRV5Z8=","IXgr/ZWOF/rduJvkSjOABCUtj5C1+tXjHJ/AwR+f7MM=","MFzAvInNDNdT4+6kp2YKAUT4+sb8fdrha9BxXnwHR1Q=","DdvOYaMZDO/di7mBvQdEocS2CE8BH2bGmIDuSGBaHa8=","MEa67EULCikf5rusfcsUb/kWUfx7NPpHjzHKEo3imho=","KLRU4kqn5Fd3FtjapW9MTJBgWdMtAGKgt3OVLQNHh14="],
+  "TotalEquity": 123456000,
+  "TotalDebt": 0
+}

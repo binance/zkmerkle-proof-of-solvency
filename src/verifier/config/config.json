@@ -1,0 +1,20 @@
+{
+  "ProofTable": "config/proof.csv",
+  "ZkKeyName": "config/zkpor864",
+  "CexAssetsInfo": [
+    {
+      "TotalEquity": 5475341087,
+      "TotalDebt": 71436240,
+      "BasePrice": 2312848000000,
+      "Symbol": "BTC",
+      "Index": 0
+    },
+    {
+      "TotalEquity": 4715323019137,
+      "TotalDebt": 11386568646,
+      "BasePrice": 158533000000,
+      "Symbol": "ETH",
+      "Index": 1
+    }
+  ]
+}
