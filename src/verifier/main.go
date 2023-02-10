@@ -142,6 +142,7 @@ func main() {
 		expectFinalCexAssetsInfoComm := utils.ComputeCexAssetsCommitment(cexAssetsInfo)
 		prevCexAssetListCommitments[1] = emptyCexAssetListCommitment
 		var finalCexAssetsInfoComm []byte
+		var accountTreeRoot []byte
 		for i := 0; i < len(proofs); i++ {
 			if batchNumber != proofs[i].BatchNumber {
 				panic("the batch number is not monotonically increasing by 1")
@@ -215,10 +216,12 @@ func main() {
 				fmt.Println("proof verify success", batchNumber)
 			}
 			batchNumber++
+			accountTreeRoot = accountTreeRoots[1]
 		}
 		if string(finalCexAssetsInfoComm) != string(expectFinalCexAssetsInfoComm) {
 			panic("Final Cex Assets Info Not Match")
 		}
+		fmt.Printf("account merkle tree root is %x\n", accountTreeRoot)
 		fmt.Println("All proofs verify passed!!!")
 	}
 }
