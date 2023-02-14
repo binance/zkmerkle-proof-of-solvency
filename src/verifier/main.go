@@ -131,6 +131,10 @@ func main() {
 		cexAssetsInfo := make([]utils.CexAssetInfo, len(verifierConfig.CexAssetsInfo))
 		for i := 0; i < len(verifierConfig.CexAssetsInfo); i++ {
 			cexAssetsInfo[verifierConfig.CexAssetsInfo[i].Index] = verifierConfig.CexAssetsInfo[i]
+			if verifierConfig.CexAssetsInfo[i].TotalEquity < verifierConfig.CexAssetsInfo[i].TotalDebt {
+				fmt.Printf("%s asset equity %d less then debt %d\n", verifierConfig.CexAssetsInfo[i].Symbol, verifierConfig.CexAssetsInfo[i].TotalEquity, verifierConfig.CexAssetsInfo[i].TotalDebt)
+				panic("invalid cex asset info")
+			}
 		}
 		emptyCexAssetsInfo := make([]utils.CexAssetInfo, len(cexAssetsInfo))
 		copy(emptyCexAssetsInfo, cexAssetsInfo)
