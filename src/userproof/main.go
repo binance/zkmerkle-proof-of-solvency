@@ -126,7 +126,6 @@ func main() {
 		ComputeAccountRootHash(userProofConfig)
 		return
 	}
-	// ComputeAccountRootHash(userProofConfig)
 	accountTree, err := utils.NewAccountTree(userProofConfig.TreeDB.Driver, userProofConfig.TreeDB.Option.Addr)
 	accounts := HandleUserData(userProofConfig)
 	fmt.Println("num", len(accounts))
@@ -139,7 +138,6 @@ func main() {
 		latestAccountIndex += 1
 	}
 	accountTreeRoot := hex.EncodeToString(accountTree.Root())
-	// proofs := make([]model.UserProof, 1)
 	jobs := make(chan Job, 1000)
 	nums := make(chan int, 1)
 	results := make(chan *model.UserProof, 1000)

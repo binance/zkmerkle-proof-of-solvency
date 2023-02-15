@@ -23,10 +23,6 @@ import (
 
 func ConvertAssetInfoToBytes(value any) []byte {
 	switch t := value.(type) {
-	//case AccountAsset:
-	//	equityBigInt := new(big.Int).SetUint64(t.Equity)
-	//	debtBigInt := new(big.Int).SetUint64(t.Debt)
-	//	return new(big.Int).Add(new(big.Int).Mul(equityBigInt, Uint64MaxValueBigInt), debtBigInt).Bytes()
 	case CexAssetInfo:
 		equityBigInt := new(big.Int).SetUint64(t.TotalEquity)
 		debtBigInt := new(big.Int).SetUint64(t.TotalDebt)
@@ -184,8 +180,6 @@ func ReadUserDataFromCsvFile(name string) ([]AccountInfo, []CexAssetInfo, error)
 	defer f.Close()
 	csvReader := csv.NewReader(f)
 	data, err := csvReader.ReadAll()
-	//fmt.Println(data[0])
-	//fmt.Println(data[1])
 	accountIndex := 0
 	cexAssetsInfo := make([]CexAssetInfo, AssetCounts)
 	accounts := make([]AccountInfo, len(data)-1)
@@ -256,7 +250,6 @@ func ReadUserDataFromCsvFile(name string) ([]AccountInfo, []CexAssetInfo, error)
 		}
 
 		account.Assets = assets
-		// AccountStatistics[len(assets)] += 1
 		if account.TotalEquity.Cmp(account.TotalDebt) >= 0 {
 			accounts[accountIndex] = account
 			accountIndex += 1
@@ -279,7 +272,6 @@ func ConvertFloatStrToUint64(f string, multiplier int64) (uint64, error) {
 		return 0, nil
 	}
 	numFloat, err := decimal.NewFromString(f)
-	// equityFloat, err := strconv.ParseFloat(data[i][j*3+1], 64)
 	if err != nil {
 		return 0, err
 	}
@@ -294,7 +286,6 @@ func ConvertFloatStrToUint64(f string, multiplier int64) (uint64, error) {
 
 func DecodeBatchWitness(data string) *BatchCreateUserWitness {
 	var witnessForCircuit BatchCreateUserWitness
-	// err = json.Unmarshal([]byte(batchWitness.WitnessData), &witnessForCircuit)
 	b, err := base64.StdEncoding.DecodeString(data)
 	if err != nil {
 		fmt.Println("deserialize batch witness failed: ", err.Error())
@@ -319,26 +310,6 @@ func DecodeBatchWitness(data string) *BatchCreateUserWitness {
 }
 
 func AccountInfoToHash(account *AccountInfo, hasher *hash.Hash) []byte {
-	//zeroByte := []byte{0}
-	//startAssetIndex := 0
-	//for p := 0; p < len(account.Assets); p++ {
-	//	if p != 0 {
-	//		startAssetIndex = int(account.Assets[p-1].Index) + 1
-	//	}
-	//	for assetIndex := startAssetIndex; assetIndex < int(account.Assets[p].Index); assetIndex++ {
-	//		(*hasher).Write(zeroByte)
-	//	}
-	//	commitment := ConvertAssetInfoToBytes(account.Assets[p])
-	//	(*hasher).Write(commitment)
-	//}
-	//
-	//if len(account.Assets) != 0 {
-	//	startAssetIndex = int(account.Assets[len(account.Assets)-1].Index) + 1
-	//}
-	//for p := startAssetIndex; p < AssetCounts; p++ {
-	//	(*hasher).Write(zeroByte)
-	//}
-	//assetCommitment := (*hasher).Sum(nil)
 	assetCommitment := ComputeUserAssetsCommitment(hasher, account.Assets)
 	(*hasher).Reset()
 	// compute new account leaf node hash

@@ -93,7 +93,6 @@ func NewProver(config *config.Config) *Prover {
 }
 
 func (p *Prover) Run(flag bool) {
-	// TODO remove
 	p.proofModel.CreateProofTable()
 	batchWitnessFetch := func() (*witness.BatchWitness, error) {
 		lock := utils.GetRedisLockByKey(p.redisConn, utils.RedisLockKey)
