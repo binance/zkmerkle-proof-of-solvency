@@ -102,6 +102,8 @@ func (b BatchCreateUserCircuit) Define(api API) error {
 	}
 
 	for j := 0; j < len(tempAfterCexAssets); j++ {
+		CheckValueInRange(api, afterCexAssets[j].TotalEquity)
+		CheckValueInRange(api, afterCexAssets[j].TotalDebt)
 		tempAfterCexAssets[j] = api.Add(api.Mul(afterCexAssets[j].TotalEquity, utils.Uint64MaxValueFrSquare),
 			api.Mul(afterCexAssets[j].TotalDebt, utils.Uint64MaxValueFr), afterCexAssets[j].BasePrice)
 	}

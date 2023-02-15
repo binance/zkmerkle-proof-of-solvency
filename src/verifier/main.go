@@ -64,9 +64,6 @@ func main() {
 			panic("the AccountIdHash is invalid")
 		}
 		accountHash := poseidon.PoseidonBytes(accountIdHash, userConfig.TotalEquity.Bytes(), userConfig.TotalDebt.Bytes(), assetCommitment)
-		//if err != nil || len(root) != 32 {
-		//	panic(err.Error())
-		//}
 		fmt.Printf("merkle leave hash: %x\n", accountHash)
 		verifyFlag := utils.VerifyMerkleProof(root, userConfig.AccountIndex, proof, accountHash)
 		if verifyFlag {
