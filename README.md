@@ -28,7 +28,7 @@ where `/server/docker_data/` is directory in the host machine which is used to p
 The `keygen` service is for generating zk related keys which are used to generate and verify zk proof. The `BatchCreateUserOpsCounts` constant variable in utils package represent how many users can be created in one batch.
 The larger the `BatchCreateUserOpsCounts` is, the longer it will take to generate zk-related keys and generate zk proof.
 
-We choose `512` as the `BatchCreateUserOpsCounts` variable. It will take about 3 hours to generate zk-related keys, and 55 seconds to generate zk proof for one batch in a 128GB memory and 32 core virtual machine.
+We choose `864` as the `BatchCreateUserOpsCounts` variable. It will take about 6 hours to generate zk-related keys, and 105 seconds to generate zk proof for one batch in a 128GB memory and 32 core virtual machine.
 
 Run the following commands to start `keygen` service:
 ```
@@ -40,15 +40,15 @@ cd src/keygen; go run main.go
 After `keygen` service finishes running, there will be several key files generated in the current directory, like the following:
 ```shell
 Total 26G
--rw-rw-r-- 1 ec2-user ec2-user  69M 12月 26 07:49 zkpor512.ccs.ct.save
--rw-rw-r-- 1 ec2-user ec2-user  16G 12月 26 07:51 zkpor512.ccs.save
--rw-rw-r-- 1 ec2-user ec2-user 1.8G 12月 26 07:51 zkpor512.pk.A.save
--rw-rw-r-- 1 ec2-user ec2-user 1.6G 12月 26 07:51 zkpor512.pk.B1.save
--rw-rw-r-- 1 ec2-user ec2-user 3.2G 12月 26 07:51 zkpor512.pk.B2.save
--rw-rw-r-- 1 ec2-user ec2-user  59M 12月 26 07:51 zkpor512.pk.E.save
--rw-rw-r-- 1 ec2-user ec2-user 1.9G 12月 26 07:52 zkpor512.pk.K.save
--rw-rw-r-- 1 ec2-user ec2-user  708 12月 26 07:52 zkpor512.vk.save
--rw-rw-r-- 1 ec2-user ec2-user 2.1G 12月 26 07:52 zkpor512.pk.Z.save
+-rw-rw-r-- 1 ec2-user ec2-user  69M 12月 26 07:49 zkpor864.ccs.ct.save
+-rw-rw-r-- 1 ec2-user ec2-user  16G 12月 26 07:51 zkpor864.ccs.save
+-rw-rw-r-- 1 ec2-user ec2-user 1.8G 12月 26 07:51 zkpor864.pk.A.save
+-rw-rw-r-- 1 ec2-user ec2-user 1.6G 12月 26 07:51 zkpor864.pk.B1.save
+-rw-rw-r-- 1 ec2-user ec2-user 3.2G 12月 26 07:51 zkpor864.pk.B2.save
+-rw-rw-r-- 1 ec2-user ec2-user  59M 12月 26 07:51 zkpor864.pk.E.save
+-rw-rw-r-- 1 ec2-user ec2-user 1.9G 12月 26 07:52 zkpor864.pk.K.save
+-rw-rw-r-- 1 ec2-user ec2-user  708 12月 26 07:52 zkpor864.vk.save
+-rw-rw-r-- 1 ec2-user ec2-user 2.1G 12月 26 07:52 zkpor864.pk.Z.save
 ```
 
 ### Generate witness
@@ -103,7 +103,7 @@ The `prover` service is used to generate zk proof and supports running in parall
     "Host": "127.0.0.1:6379",
     "Type": "node"
   },
-  "ZkKeyName": "/server/zkmerkle-proof-of-solvency/src/keygen/zkpor512"
+  "ZkKeyName": "/server/zkmerkle-proof-of-solvency/src/keygen/zkpor864"
 }
 ```
 
@@ -249,6 +249,6 @@ Compare the account tree root in the output log with the account tree root by `w
 
 #### check postgresql table consistency
 
-Suppose the number of users is `accountsNum`, and `batchNumber` is 512, so the number of rows in `witness` and `proof` table is: `(accountNum + 512 - 1) / 512`. And the number of rows in `userproof` table equals to `accountsNum`.
+Suppose the number of users is `accountsNum`, and `batchNumber` is 864, so the number of rows in `witness` and `proof` table is: `(accountNum + 864 - 1) / 864`. And the number of rows in `userproof` table equals to `accountsNum`.
 
 When all services run finished, Check that the number of rows in table is as expected. 
