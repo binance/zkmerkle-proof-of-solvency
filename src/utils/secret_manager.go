@@ -3,10 +3,11 @@ package utils
 import (
 	"context"
 	"encoding/json"
-
+	"errors"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
+	"strings"
 )
 
 func GetSecretFromAws(secretId string) (string, error) {
@@ -29,6 +30,7 @@ func GetSecretFromAws(secretId string) (string, error) {
 	return *result.SecretString, err
 }
 
+// user name can't include ":"
 func GetMysqlSource(source string, secretId string) (string, error) {
 	value, err := GetSecretFromAws(secretId)
 	if err != nil {
@@ -41,5 +43,11 @@ func GetMysqlSource(source string, secretId string) (string, error) {
 		panic(err.Error())
 	}
 	passwd := result["pg_password"]
-	return source + " password=" + passwd, nil
+	aIndex := strings.Index(source, ":")
+	bIndex := strings.Index(source, "@tcp")
+	if aIndex == -1 || bIndex == -1 || bIndex <= aIndex {
+		return "", errors.New("the source format is wrong")
+	}
+	newSource := source[:aIndex+1] + passwd + source[bIndex:]
+	return newSource, nil
 }
