@@ -3,6 +3,7 @@ package utils
 import (
 	"context"
 	"encoding/json"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
@@ -28,7 +29,7 @@ func GetSecretFromAws(secretId string) (string, error) {
 	return *result.SecretString, err
 }
 
-func GetPostgresqlSource(source string, secretId string) (string, error) {
+func GetMysqlSource(source string, secretId string) (string, error) {
 	value, err := GetSecretFromAws(secretId)
 	if err != nil {
 		return "", err

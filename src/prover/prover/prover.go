@@ -6,6 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"runtime"
+	"time"
+
 	"github.com/binance/zkmerkle-proof-of-solvency/circuit"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/prover/config"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/utils"
@@ -16,11 +20,8 @@ import (
 	"github.com/consensys/gnark/std"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/stores/redis"
-	"gorm.io/driver/postgres"
+	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
-	"os"
-	"runtime"
-	"time"
 )
 
 func WithRedis(redisType string, redisPass string) redis.Option {
@@ -43,7 +44,7 @@ type Prover struct {
 
 func NewProver(config *config.Config) *Prover {
 	redisConn := redis.New(config.Redis.Host, WithRedis(config.Redis.Type, config.Redis.Password))
-	db, err := gorm.Open(postgres.Open(config.PostgresDataSource))
+	db, err := gorm.Open(mysql.Open(config.MysqlDataSource))
 	if err != nil {
 		panic(err.Error())
 	}

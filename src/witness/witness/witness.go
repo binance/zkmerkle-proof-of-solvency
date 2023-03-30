@@ -5,18 +5,20 @@ import (
 	"encoding/base64"
 	"encoding/gob"
 	"fmt"
-	"github.com/binance/zkmerkle-proof-of-solvency/src/utils"
-	"github.com/binance/zkmerkle-proof-of-solvency/src/witness/config"
-	bsmt "github.com/bnb-chain/zkbnb-smt"
-	"github.com/consensys/gnark-crypto/ecc/bn254/fr/poseidon"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 	"log"
 	"math/big"
 	"os"
 	"runtime"
+	"sync/atomic"
 	"time"
+
+	"github.com/binance/zkmerkle-proof-of-solvency/src/utils"
+	"github.com/binance/zkmerkle-proof-of-solvency/src/witness/config"
+	bsmt "github.com/bnb-chain/zkbnb-smt"
+	"github.com/consensys/gnark-crypto/ecc/bn254/fr/poseidon"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 type Witness struct {
@@ -44,7 +46,7 @@ func NewWitness(accountTree bsmt.SparseMerkleTree, totalOpsNumber uint32,
 			Colorful:                  false,            // Disable color
 		},
 	)
-	db, err := gorm.Open(postgres.Open(config.PostgresDataSource), &gorm.Config{
+	db, err := gorm.Open(mysql.Open(config.MysqlDataSource), &gorm.Config{
 		Logger: newLogger,
 	})
 	if err != nil {
@@ -185,7 +187,7 @@ func (w *Witness) Run() {
 			WitnessData: base64.StdEncoding.EncodeToString(serializeBuf.Bytes()),
 			Status:      StatusPublished,
 		}
-		accPrunedVersion := bsmt.Version(i)
+		accPrunedVersion := bsmt.Version(atomic.LoadInt64(&w.currentBatchNumber) + 1)
 		ver, err := w.accountTree.Commit(&accPrunedVersion)
 		if err != nil {
 			fmt.Println("ver is ", ver)
@@ -218,6 +220,7 @@ func (w *Witness) WriteBatchWitnessToDB() {
 		if err != nil {
 			panic("create batch witness failed " + err.Error())
 		}
+		atomic.StoreInt64(&w.currentBatchNumber, witness.Height)
 		if witness.Height%100 == 0 {
 			fmt.Println("save batch ", witness.Height, " to db")
 		}

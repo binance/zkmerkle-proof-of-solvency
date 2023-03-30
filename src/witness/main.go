@@ -4,17 +4,18 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
+
 	"github.com/binance/zkmerkle-proof-of-solvency/src/utils"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/witness/config"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/witness/witness"
-	"io/ioutil"
 )
 
 func main() {
 	remotePasswdConfig := flag.String("remote_password_config", "", "fetch password from aws secretsmanager")
 	flag.Parse()
 	witnessConfig := &config.Config{}
-	content, err := ioutil.ReadFile("config/config.json")
+	content, err := ioutil.ReadFile("/Users/likang/Documents/git/lightningli/zkmerkle-proof-of-solvency/src/witness/config/config.json")
 	if err != nil {
 		panic(err.Error())
 	}
@@ -23,11 +24,11 @@ func main() {
 		panic(err.Error())
 	}
 	if *remotePasswdConfig != "" {
-		s, err := utils.GetPostgresqlSource(witnessConfig.PostgresDataSource, *remotePasswdConfig)
+		s, err := utils.GetMysqlSource(witnessConfig.MysqlDataSource, *remotePasswdConfig)
 		if err != nil {
 			panic(err.Error())
 		}
-		witnessConfig.PostgresDataSource = s
+		witnessConfig.MysqlDataSource = s
 	}
 
 	accounts, cexAssetsInfo, err := utils.ParseUserDataSet(witnessConfig.UserDataFile)

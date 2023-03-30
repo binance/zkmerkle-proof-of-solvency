@@ -5,19 +5,20 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
+	"log"
+	"os"
+	"time"
+
 	"github.com/binance/zkmerkle-proof-of-solvency/src/dbtool/config"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/prover/prover"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/userproof/model"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/utils"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/witness/witness"
 	"github.com/go-redis/redis/v8"
-	"gorm.io/driver/postgres"
+	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"io/ioutil"
-	"log"
-	"os"
-	"time"
 )
 
 func main() {
@@ -32,7 +33,7 @@ func main() {
 	}
 
 	onlyFlushKvrocks := flag.Bool("only_delete_kvrocks", false, "only delete kvrocks")
-	deleteAllData := flag.Bool("delete_all", false, "delete kvrocks and postgresql data")
+	deleteAllData := flag.Bool("delete_all", false, "delete kvrocks and mysql data")
 	checkProverStatus := flag.Bool("check_prover_status", false, "check prover status")
 	remotePasswdConfig := flag.String("remote_password_config", "", "fetch password from aws secretsmanager")
 	queryCexAssetsConfig := flag.Bool("query_cex_assets", false, "query cex assets info")
@@ -40,14 +41,14 @@ func main() {
 	flag.Parse()
 
 	if *remotePasswdConfig != "" {
-		s, err := utils.GetPostgresqlSource(dbtoolConfig.PostgresDataSource, *remotePasswdConfig)
+		s, err := utils.GetMysqlSource(dbtoolConfig.MysqlDataSource, *remotePasswdConfig)
 		if err != nil {
 			panic(err.Error())
 		}
-		dbtoolConfig.PostgresDataSource = s
+		dbtoolConfig.MysqlDataSource = s
 	}
 	if *deleteAllData {
-		db, err := gorm.Open(postgres.Open(dbtoolConfig.PostgresDataSource))
+		db, err := gorm.Open(mysql.Open(dbtoolConfig.MysqlDataSource))
 		if err != nil {
 			panic(err.Error())
 		}
@@ -103,7 +104,7 @@ func main() {
 				Colorful:                  false,            // Disable color
 			},
 		)
-		db, err := gorm.Open(postgres.Open(dbtoolConfig.PostgresDataSource), &gorm.Config{
+		db, err := gorm.Open(mysql.Open(dbtoolConfig.MysqlDataSource), &gorm.Config{
 			Logger: newLogger,
 		})
 		if err != nil {
@@ -122,7 +123,7 @@ func main() {
 	}
 
 	if *queryCexAssetsConfig {
-		db, err := gorm.Open(postgres.Open(dbtoolConfig.PostgresDataSource))
+		db, err := gorm.Open(mysql.Open(dbtoolConfig.MysqlDataSource))
 		if err != nil {
 			panic(err.Error())
 		}
