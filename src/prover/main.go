@@ -3,10 +3,11 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"io/ioutil"
+
 	"github.com/binance/zkmerkle-proof-of-solvency/src/prover/config"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/prover/prover"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/utils"
-	"io/ioutil"
 )
 
 func main() {
@@ -23,11 +24,11 @@ func main() {
 	rerun := flag.Bool("rerun", false, "flag which indicates rerun proof generation")
 	flag.Parse()
 	if *remotePasswdConfig != "" {
-		s, err := utils.GetPostgresqlSource(proverConfig.PostgresDataSource, *remotePasswdConfig)
+		s, err := utils.GetMysqlSource(proverConfig.MysqlDataSource, *remotePasswdConfig)
 		if err != nil {
 			panic(err.Error())
 		}
-		proverConfig.PostgresDataSource = s
+		proverConfig.MysqlDataSource = s
 	}
 	prover := prover.NewProver(proverConfig)
 	prover.Run(*rerun)

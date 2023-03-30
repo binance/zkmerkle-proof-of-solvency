@@ -5,18 +5,19 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
+	"log"
+	"os"
+	"time"
+
 	"github.com/binance/zkmerkle-proof-of-solvency/src/userproof/config"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/userproof/model"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/utils"
 	bsmt "github.com/bnb-chain/zkbnb-smt"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/poseidon"
-	"gorm.io/driver/postgres"
+	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"io/ioutil"
-	"log"
-	"os"
-	"time"
 )
 
 func HandleUserData(userProofConfig *config.Config) []utils.AccountInfo {
@@ -116,11 +117,11 @@ func main() {
 		panic(err.Error())
 	}
 	if *remotePasswdConfig != "" {
-		s, err := utils.GetPostgresqlSource(userProofConfig.PostgresDataSource, *remotePasswdConfig)
+		s, err := utils.GetMysqlSource(userProofConfig.MysqlDataSource, *remotePasswdConfig)
 		if err != nil {
 			panic(err.Error())
 		}
-		userProofConfig.PostgresDataSource = s
+		userProofConfig.MysqlDataSource = s
 	}
 	if *memoryTreeFlag {
 		ComputeAccountRootHash(userProofConfig)
@@ -267,7 +268,7 @@ func OpenUserProofTable(userConfig *config.Config) model.UserProofModel {
 			Colorful:                  false,            // Disable color
 		},
 	)
-	db, err := gorm.Open(postgres.Open(userConfig.PostgresDataSource), &gorm.Config{
+	db, err := gorm.Open(mysql.Open(userConfig.MysqlDataSource), &gorm.Config{
 		Logger: newLogger,
 	})
 	if err != nil {

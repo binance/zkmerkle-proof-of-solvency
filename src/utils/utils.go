@@ -322,8 +322,8 @@ func RecoverAfterCexAssets(witness *BatchCreateUserWitness) []CexAssetInfo {
 	for i := 0; i < len(witness.CreateUserOps); i++ {
 		for j := 0; j < len(witness.CreateUserOps[i].Assets); j++ {
 			asset := &witness.CreateUserOps[i].Assets[j]
-			cexAssets[asset.Index].TotalEquity += asset.Equity
-			cexAssets[asset.Index].TotalDebt += asset.Debt
+			cexAssets[asset.Index].TotalEquity = SafeAdd(cexAssets[asset.Index].TotalEquity, asset.Equity)
+			cexAssets[asset.Index].TotalDebt = SafeAdd(cexAssets[asset.Index].TotalDebt, asset.Debt)
 		}
 	}
 	// sanity check
