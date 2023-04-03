@@ -15,7 +15,7 @@ func main() {
 	remotePasswdConfig := flag.String("remote_password_config", "", "fetch password from aws secretsmanager")
 	flag.Parse()
 	witnessConfig := &config.Config{}
-	content, err := ioutil.ReadFile("/Users/likang/Documents/git/lightningli/zkmerkle-proof-of-solvency/src/witness/config/config.json")
+	content, err := ioutil.ReadFile("config/config.json")
 	if err != nil {
 		panic(err.Error())
 	}
