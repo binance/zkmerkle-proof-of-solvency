@@ -39,7 +39,7 @@ type (
 		gorm.Model
 		Height      int64 `gorm:"index:idx_height,unique"`
 		WitnessData string
-		Status      int64 `gorm:"index"`
+		Status      int64
 	}
 )
 
@@ -63,30 +63,28 @@ func (m *defaultWitnessModel) DropBatchWitnessTable() error {
 }
 
 func (m *defaultWitnessModel) GetLatestBatchWitnessHeight() (batchNumber int64, err error) {
-	var height int64
-	dbTx := m.DB.Table(m.table).Select("height").Order("height desc").Limit(1).Find(&height)
+	var row *BatchWitness
+	dbTx := m.DB.Table(m.table).Order("height desc").Limit(1).Find(&row)
 	if dbTx.Error != nil {
 		return 0, utils.DbErrSqlOperation
 	} else if dbTx.RowsAffected == 0 {
 		return 0, utils.DbErrNotFound
 	}
-	return height, nil
+	return row.Height, nil
 }
 
 func (m *defaultWitnessModel) GetLatestBatchWitness() (witness *BatchWitness, err error) {
-	var height int64
-	dbTx := m.DB.Table(m.table).Debug().Select("height").Order("height desc").Limit(1).Find(&height)
+	dbTx := m.DB.Table(m.table).Order("height desc").Limit(1).Find(&witness)
 	if dbTx.Error != nil {
 		return nil, dbTx.Error
 	} else if dbTx.RowsAffected == 0 {
 		return nil, utils.DbErrNotFound
 	}
-
-	return m.GetBatchWitnessByHeight(height)
+	return witness, nil
 }
 
 func (m *defaultWitnessModel) GetLatestBatchWitnessByStatus(status int64) (witness *BatchWitness, err error) {
-	dbTx := m.DB.Table(m.table).Unscoped().Where("status = ?", status).Limit(1).Find(&witness)
+	dbTx := m.DB.Table(m.table).Where("status = ?", status).Order("height asc").Limit(1).Find(&witness)
 	if dbTx.Error != nil {
 		return nil, utils.DbErrSqlOperation
 	} else if dbTx.RowsAffected == 0 {
@@ -121,12 +119,9 @@ func (m *defaultWitnessModel) CreateBatchWitness(witness []BatchWitness) error {
 }
 
 func (m *defaultWitnessModel) UpdateBatchWitnessStatus(witness *BatchWitness, status int64) error {
-	dbTx := m.DB.Table(m.table).Where("height = ?", witness.Height).Updates(BatchWitness{
-		Model: gorm.Model{
-			UpdatedAt: time.Now(),
-		},
-		Status: status,
-	})
+	witness.Status = status
+	witness.UpdatedAt = time.Now()
+	dbTx := m.DB.Table(m.table).Save(witness)
 	if dbTx.Error != nil {
 		return utils.DbErrSqlOperation
 	}
