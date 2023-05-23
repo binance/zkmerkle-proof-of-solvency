@@ -195,10 +195,6 @@ func (p *Prover) Run(flag bool) {
 		_, err = p.proofModel.GetProofByBatchNumber(batchWitness.Height)
 		if err == nil {
 			fmt.Printf("blockProof of height %d exists\n", batchWitness.Height)
-			err = p.witnessModel.UpdateBatchWitnessStatus(batchWitness, witness.StatusFinished)
-			if err != nil {
-				fmt.Println("update witness error:", err.Error())
-			}
 			continue
 		}
 
