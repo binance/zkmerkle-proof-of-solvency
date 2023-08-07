@@ -28,5 +28,6 @@ var (
 		"SPELL": true,
 		"HOT":   true,
 		"DOGE":  true,
+        "PEPE":  true,
 	}
 )
