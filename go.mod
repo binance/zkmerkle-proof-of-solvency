@@ -8,7 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.15.1
 	github.com/bnb-chain/zkbnb-smt v0.0.3-0.20221227064653-7422bfd51aa0
 	github.com/consensys/gnark v0.7.0
-	github.com/consensys/gnark-crypto v0.10.0
+	github.com/consensys/gnark-crypto v0.7.0
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/gocarina/gocsv v0.0.0-20230123225133-763e25b40669
 	github.com/shopspring/decimal v1.3.1
