@@ -118,7 +118,7 @@ func main() {
 		prevCexAssetListCommitments := make([][]byte, 2)
 		prevAccountTreeRoots := make([][]byte, 2)
 		// depth-28 empty account tree root
-		emptyAccountTreeRoot, err := hex.DecodeString("0118925954da77d1a4b241fd163e4373e2265c515cfa60af7fcd28c8cb9ad58a")
+		emptyAccountTreeRoot, err := hex.DecodeString("0e85b74bfd43747cb5e18ecb067727243f2e919a91ef69d86b5a27ed74bea7c2")
 		if err != nil {
 			fmt.Println("wrong empty empty account tree root")
 			return
@@ -205,7 +205,7 @@ func main() {
 			prevAccountTreeRoots = accountTreeRoots
 
 			verifyWitness := circuit.NewVerifyBatchCreateUserCircuit(actualHash)
-			vWitness, err := frontend.NewWitness(verifyWitness, ecc.BN254, frontend.PublicOnly())
+			vWitness, err := frontend.NewWitness(verifyWitness, ecc.BN254.ScalarField(), frontend.PublicOnly())
 			if err != nil {
 				panic(err.Error())
 			}
