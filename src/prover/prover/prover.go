@@ -16,6 +16,7 @@ import (
 	"github.com/binance/zkmerkle-proof-of-solvency/src/witness/witness"
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/groth16"
+	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/std"
 	"github.com/zeromicro/go-zero/core/logx"
@@ -39,7 +40,7 @@ type Prover struct {
 	VerifyingKeys groth16.VerifyingKey
 	ProvingKeys   []groth16.ProvingKey
 	SessionName   string
-	R1cs          frontend.CompiledConstraintSystem
+	R1cs          constraint.ConstraintSystem
 }
 
 func NewProver(config *config.Config) *Prover {
@@ -70,10 +71,15 @@ func NewProver(config *config.Config) *Prover {
 			}
 		}
 	}()
-	prover.R1cs, err = groth16.LoadR1CSFromFile(config.ZkKeyName)
+	nbConstraints, err := LoadR1CSLen(config.ZkKeyName + ".r1cslen")
 	if err != nil {
-		panic("r1cs init error")
+		panic("r1cs len load error...")
 	}
+
+	prover.R1cs = groth16.NewCS(ecc.BN254)
+	prover.R1cs.LoadFromSplitBinaryConcurrent(config.ZkKeyName, nbConstraints, utils.R1csBatchSize, runtime.NumCPU())
+	// circuit := circuit.NewBatchCreateUserCircuit(utils.AssetCounts, utils.BatchCreateUserOpsCounts)
+	// prover.R1cs, err = frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, circuit, frontend.IgnoreUnconstrainedInputs(), frontend.WithGKRBN(0))
 	loadR1csChan <- true
 	runtime.GC()
 	fmt.Println("finish loading r1cs...")
@@ -221,9 +227,25 @@ func (p *Prover) Run(flag bool) {
 	}
 }
 
+func LoadR1CSLen(filename string) (nbConstraints int, err error) {
+	f, err := os.Open(filename)
+	if err != nil {
+		return -1, fmt.Errorf("read file error")
+	}
+	defer f.Close()
+
+	var value int
+	_, err = fmt.Fscanf(f, "%d", &value)
+	if err != nil {
+		return -1, err
+	}
+
+	return value, nil
+}
+
 func LoadProvingKey(filepath string) (pks []groth16.ProvingKey, err error) {
 	logx.Info("start reading proving key")
-	return groth16.ReadSegmentProveKey(filepath)
+	return groth16.ReadSegmentProveKey(ecc.BN254, filepath)
 }
 
 func LoadVerifyingKey(filepath string) (verifyingKey groth16.VerifyingKey, err error) {
@@ -237,7 +259,7 @@ func LoadVerifyingKey(filepath string) (verifyingKey groth16.VerifyingKey, err e
 	return verifyingKey, nil
 }
 
-func GenerateAndVerifyProof(r1cs frontend.CompiledConstraintSystem,
+func GenerateAndVerifyProof(r1cs constraint.ConstraintSystem,
 	provingKey []groth16.ProvingKey,
 	verifyingKey groth16.VerifyingKey,
 	batchWitness *utils.BatchCreateUserWitness,
@@ -248,12 +270,12 @@ func GenerateAndVerifyProof(r1cs frontend.CompiledConstraintSystem,
 	fmt.Println("begin to generate proof for batch: ", batchNumber)
 	circuitWitness, _ := circuit.SetBatchCreateUserCircuitWitness(batchWitness)
 	verifyWitness := circuit.NewVerifyBatchCreateUserCircuit(batchWitness.BatchCommitment)
-	witness, err := frontend.NewWitness(circuitWitness, ecc.BN254)
+	witness, err := frontend.NewWitness(circuitWitness, ecc.BN254.ScalarField())
 	if err != nil {
 		return proof, err
 	}
 
-	vWitness, err := frontend.NewWitness(verifyWitness, ecc.BN254, frontend.PublicOnly())
+	vWitness, err := frontend.NewWitness(verifyWitness, ecc.BN254.ScalarField(), frontend.PublicOnly())
 	if err != nil {
 		return proof, err
 	}

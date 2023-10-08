@@ -10,6 +10,7 @@ const (
 	AccountTreeDepth         = 28
 	AssetCounts              = 350
 	RedisLockKey             = "prover_mutex_key"
+	R1csBatchSize            = 1000000
 )
 
 var (
