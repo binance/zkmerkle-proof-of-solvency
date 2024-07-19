@@ -1,6 +1,7 @@
 {
   "ProofTable": "config/proof.csv",
-  "ZkKeyName": "config/zkpor864",
+  "ZkKeyName": ["config/zkpor10"],
+  "AssetsCountTiers": [10],
   "CexAssetsInfo": [
     {
       "TotalEquity": 5475341087,

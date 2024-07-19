@@ -5,5 +5,6 @@
     "Type": "node"
   },
   "DbSuffix": "0",
-  "ZkKeyName": "/server/data/.keys/zkpor864"
+  "ZkKeyName": ["/server/data/.keys/zkpor10"],
+  "AssetsCountTiers": [10]
 }

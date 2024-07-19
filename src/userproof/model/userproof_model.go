@@ -16,6 +16,7 @@ type (
 		GetUserProofByIndex(id uint32) (*UserProof, error)
 		GetUserProofById(id string) (*UserProof, error)
 		GetLatestAccountIndex() (uint32, error)
+		GetUserCounts() (int, error)
 	}
 
 	defaultUserProofModel struct {
@@ -29,6 +30,7 @@ type (
 		AccountLeafHash string
 		TotalEquity     string
 		TotalDebt       string
+		TotalCollateral string
 		Assets          string
 		Proof           string
 		Config          string
@@ -39,6 +41,7 @@ type (
 		AccountIdHash string
 		TotalEquity   *big.Int
 		TotalDebt     *big.Int
+		TotalCollateral *big.Int
 		Assets        []utils.AccountAsset
 		Root          string
 		Proof         [][]byte
@@ -73,6 +76,7 @@ func (m *defaultUserProofModel) CreateUserProofs(rows []UserProof) error {
 }
 
 func (m *defaultUserProofModel) GetUserProofByIndex(id uint32) (userproof *UserProof, err error) {
+	userproof = &UserProof{}
 	dbTx := m.DB.Table(m.table).Where("account_index = ?", id).Find(userproof)
 	if dbTx.Error != nil {
 		return nil, dbTx.Error
@@ -83,6 +87,7 @@ func (m *defaultUserProofModel) GetUserProofByIndex(id uint32) (userproof *UserP
 }
 
 func (m *defaultUserProofModel) GetUserProofById(id string) (userproof *UserProof, err error) {
+	userproof = &UserProof{}
 	dbTx := m.DB.Table(m.table).Where("account_id = ?", id).Find(userproof)
 	if dbTx.Error != nil {
 		return nil, dbTx.Error
@@ -101,4 +106,13 @@ func (m *defaultUserProofModel) GetLatestAccountIndex() (uint32, error) {
 		return 0, utils.DbErrNotFound
 	}
 	return row.AccountIndex, nil
+}
+
+func (m *defaultUserProofModel) GetUserCounts() (int, error) {
+	var count int64 = 0
+	dbTx := m.DB.Table(m.table).Count(&count)
+	if dbTx.Error != nil {
+		return 0, dbTx.Error
+	}
+	return int(count), nil
 }

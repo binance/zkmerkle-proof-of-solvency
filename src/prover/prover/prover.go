@@ -17,9 +17,9 @@ import (
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/constraint"
+	"github.com/consensys/gnark/constraint/solver"
 	"github.com/consensys/gnark/frontend"
-	"github.com/consensys/gnark/std"
-	"github.com/zeromicro/go-zero/core/logx"
+
 	"github.com/zeromicro/go-zero/core/stores/redis"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -37,10 +37,13 @@ type Prover struct {
 	proofModel   ProofModel
 	redisConn    *redis.Redis
 
-	VerifyingKeys groth16.VerifyingKey
-	ProvingKeys   []groth16.ProvingKey
-	SessionName   string
+	VerifyingKey groth16.VerifyingKey
+	ProvingKey   groth16.ProvingKey
+	SessionName   []string
+	AssetsCountTiers    []int
 	R1cs          constraint.ConstraintSystem
+
+	CurrentSnarkParamsInUse int
 }
 
 func NewProver(config *config.Config) *Prover {
@@ -54,48 +57,12 @@ func NewProver(config *config.Config) *Prover {
 		proofModel:   NewProofModel(db, config.DbSuffix),
 		redisConn:    redisConn,
 		SessionName:  config.ZkKeyName,
+		AssetsCountTiers:  config.AssetsCountTiers,
+		CurrentSnarkParamsInUse: 0,
 	}
 
-	std.RegisterHints()
-	fmt.Println("begin loading r1cs...")
-	loadR1csChan := make(chan bool)
-	go func() {
-		for {
-
-			select {
-			case <-loadR1csChan:
-				fmt.Println("load r1cs finished...... quit")
-				return
-			case <-time.After(time.Second * 10):
-				runtime.GC()
-			}
-		}
-	}()
-	nbConstraints, err := LoadR1CSLen(config.ZkKeyName + ".r1cslen")
-	if err != nil {
-		panic("r1cs len load error...")
-	}
-
-	prover.R1cs = groth16.NewCS(ecc.BN254)
-	prover.R1cs.LoadFromSplitBinaryConcurrent(config.ZkKeyName, nbConstraints, utils.R1csBatchSize, runtime.NumCPU())
-	// circuit := circuit.NewBatchCreateUserCircuit(utils.AssetCounts, utils.BatchCreateUserOpsCounts)
-	// prover.R1cs, err = frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, circuit, frontend.IgnoreUnconstrainedInputs(), frontend.WithGKRBN(0))
-	loadR1csChan <- true
-	runtime.GC()
-	fmt.Println("finish loading r1cs...")
-	// read proving and verifying keys
-	fmt.Println("begin loading proving key...")
-	prover.ProvingKeys, err = LoadProvingKey(config.ZkKeyName)
-	if err != nil {
-		panic("provingKey loading error")
-	}
-	fmt.Println("finish loading proving key...")
-	fmt.Println("begin loading verifying key...")
-	prover.VerifyingKeys, err = LoadVerifyingKey(config.ZkKeyName)
-	if err != nil {
-		panic("verifyingKey loading error")
-	}
-	fmt.Println("finish loading verifying key...")
+	// std.RegisterHints()
+	solver.RegisterHint(circuit.IntegerDivision)
 	return &prover
 }
 
@@ -179,9 +146,10 @@ func (p *Prover) Run(flag bool) {
 			fmt.Println("marshal account tree root failed: ", err.Error())
 			return
 		}
-		proof, err := GenerateAndVerifyProof(p.R1cs, p.ProvingKeys, p.VerifyingKeys, witnessForCircuit, p.SessionName, batchWitness.Height)
+		proof, assetsCount, err := p.GenerateAndVerifyProof(witnessForCircuit, batchWitness.Height)
 		if err != nil {
 			fmt.Println("generate and verify proof error:", err.Error())
+			return
 		}
 		var buf bytes.Buffer
 		_, err = proof.WriteRawTo(&buf)
@@ -214,6 +182,7 @@ func (p *Prover) Run(flag bool) {
 			CexAssetListCommitments: string(cexAssetListCommitmentsSerial),
 			AccountTreeRoots:        string(accountTreeRootsSerial),
 			BatchCommitment:         base64.StdEncoding.EncodeToString(witnessForCircuit.BatchCommitment),
+			AssetsCount:             assetsCount,
 		}
 		err = p.proofModel.CreateProof(row)
 		if err != nil {
@@ -227,70 +196,121 @@ func (p *Prover) Run(flag bool) {
 	}
 }
 
-func LoadR1CSLen(filename string) (nbConstraints int, err error) {
-	f, err := os.Open(filename)
-	if err != nil {
-		return -1, fmt.Errorf("read file error")
-	}
-	defer f.Close()
-
-	var value int
-	_, err = fmt.Fscanf(f, "%d", &value)
-	if err != nil {
-		return -1, err
-	}
-
-	return value, nil
-}
-
-func LoadProvingKey(filepath string) (pks []groth16.ProvingKey, err error) {
-	logx.Info("start reading proving key")
-	return groth16.ReadSegmentProveKey(ecc.BN254, filepath)
-}
-
-func LoadVerifyingKey(filepath string) (verifyingKey groth16.VerifyingKey, err error) {
-	verifyingKey = groth16.NewVerifyingKey(ecc.BN254)
-	f, _ := os.Open(filepath + ".vk.save")
-	_, err = verifyingKey.ReadFrom(f)
-	if err != nil {
-		return verifyingKey, fmt.Errorf("read file error")
-	}
-	f.Close()
-	return verifyingKey, nil
-}
-
-func GenerateAndVerifyProof(r1cs constraint.ConstraintSystem,
-	provingKey []groth16.ProvingKey,
-	verifyingKey groth16.VerifyingKey,
+func (p *Prover) GenerateAndVerifyProof(
 	batchWitness *utils.BatchCreateUserWitness,
-	zkKeyName string,
 	batchNumber int64,
-) (proof groth16.Proof, err error) {
+) (proof groth16.Proof, assetsCount int, err error) {
 	startTime := time.Now().UnixMilli()
 	fmt.Println("begin to generate proof for batch: ", batchNumber)
 	circuitWitness, _ := circuit.SetBatchCreateUserCircuitWitness(batchWitness)
+	// Lazy load r1cs, proving key and verifying key.
+	p.LoadSnarkParamsOnce(len(circuitWitness.CreateUserOps[0].Assets))
 	verifyWitness := circuit.NewVerifyBatchCreateUserCircuit(batchWitness.BatchCommitment)
 	witness, err := frontend.NewWitness(circuitWitness, ecc.BN254.ScalarField())
 	if err != nil {
-		return proof, err
+		return proof, 0, err
 	}
 
 	vWitness, err := frontend.NewWitness(verifyWitness, ecc.BN254.ScalarField(), frontend.PublicOnly())
 	if err != nil {
-		return proof, err
+		return proof, 0, err
 	}
-	proof, err = groth16.ProveRoll(r1cs, provingKey[0], provingKey[1], witness, zkKeyName)
+	proof, err = groth16.Prove(p.R1cs, p.ProvingKey, witness)
 	if err != nil {
-		return proof, err
+		return proof, 0, err
 	}
 	endTime := time.Now().UnixMilli()
 	fmt.Println("proof generation cost ", endTime-startTime, " ms")
 
-	err = groth16.Verify(proof, verifyingKey, vWitness)
+	err = groth16.Verify(proof, p.VerifyingKey, vWitness)
 	if err != nil {
-		return proof, err
+		return proof, 0, err
 	}
 	endTime2 := time.Now().UnixMilli()
 	fmt.Println("proof verification cost ", endTime2-endTime, " ms")
-	return proof, nil
+	return proof, len(verifyWitness.CreateUserOps[0].Assets), nil
+}
+
+func (p *Prover) LoadSnarkParamsOnce(targerAssetsCount int) {
+	if targerAssetsCount == p.CurrentSnarkParamsInUse {
+		return
+	}
+	
+	index := -1
+	for i, v :=  range p.AssetsCountTiers {
+		if targerAssetsCount == v {
+			index = i
+			break
+		}
+	}
+	if index == -1 {
+		panic("the assets count is not in the config file")
+	}
+	// Load r1cs, proving key and verifying key.
+	s := time.Now()
+	fmt.Println("begin loading r1cs of ", targerAssetsCount, " assets")
+	loadR1csChan := make(chan bool)
+	go func() {
+		for {
+
+			select {
+			case <-loadR1csChan:
+				fmt.Println("load r1cs finished...... quit")
+				return
+			case <-time.After(time.Second * 10):
+				runtime.GC()
+			}
+		}
+	}()
+
+	p.R1cs = groth16.NewCS(ecc.BN254)
+
+	r1csFromFile, err := os.ReadFile(p.SessionName[index] + ".r1cs")
+	if err != nil {
+		panic("r1cs file load error..." + err.Error())
+	}
+	buf := bytes.NewBuffer(r1csFromFile)
+	n, err := p.R1cs.ReadFrom(buf)
+	if err != nil {
+		panic("r1cs read error..." + err.Error())
+	}
+	fmt.Println("r1cs read size is ", n)
+	loadR1csChan <- true
+	runtime.GC()
+	et := time.Now()
+	fmt.Println("finish loading r1cs.... the time cost is ", et.Sub(s))
+	
+	// read proving and verifying keys
+	fmt.Println("begin loading proving key of ", targerAssetsCount, " assets")
+	s = time.Now()
+	pkFromFile, err := os.ReadFile(p.SessionName[index] + ".pk")
+	if err != nil {
+		panic("provingKey file load error:" + err.Error())
+	}
+	buf = bytes.NewBuffer(pkFromFile)
+	p.ProvingKey = groth16.NewProvingKey(ecc.BN254)
+	n, err = p.ProvingKey.UnsafeReadFrom(buf)
+	if err != nil {
+		panic("provingKey loading error:" + err.Error())
+	}
+	fmt.Println("proving key read size is ", n)
+	et = time.Now()
+	fmt.Println("finish loading proving key... the time cost is ", et.Sub(s))
+	
+	fmt.Println("begin loading verifying key of ", targerAssetsCount, " assets")
+	s = time.Now()
+	vkFromFile, err := os.ReadFile(p.SessionName[index] + ".vk")
+	if err != nil {
+		panic("verifyingKey file load error:" + err.Error())
+	}
+	buf = bytes.NewBuffer(vkFromFile)
+	p.VerifyingKey = groth16.NewVerifyingKey(ecc.BN254)
+	n, err = p.VerifyingKey.ReadFrom(buf)
+	if err != nil {
+		panic("verifyingKey loading error:" + err.Error())
+	}
+	fmt.Println("verifying key read size is ", n)
+	et = time.Now()
+	fmt.Println("finish loading verifying key.. the time cost is ", et.Sub(s))
+	p.CurrentSnarkParamsInUse = targerAssetsCount
 }

@@ -2,18 +2,33 @@ package utils
 
 import "math/big"
 
+type TierRatio struct {
+	BoundaryValue *big.Int
+	Ratio         uint8
+	PrecomputedValue *big.Int
+}
+
 type CexAssetInfo struct {
 	TotalEquity uint64
 	TotalDebt   uint64
 	BasePrice   uint64
 	Symbol      string
 	Index       uint32
+	VipLoanCollateral         uint64
+	MarginCollateral          uint64
+	PortfolioMarginCollateral uint64
+	VipLoanRatios         [TierCount]TierRatio
+	MarginRatios          [TierCount]TierRatio
+	PortfolioMarginRatios [TierCount]TierRatio
 }
 
 type AccountAsset struct {
-	Index  uint16
-	Equity uint64
-	Debt   uint64
+	Index             uint16
+	Equity 	          uint64
+	Debt              uint64
+	VipLoan           uint64
+	Margin            uint64
+	PortfolioMargin   uint64
 }
 
 type AccountInfo struct {
@@ -21,6 +36,7 @@ type AccountInfo struct {
 	AccountId    []byte
 	TotalEquity  *big.Int
 	TotalDebt    *big.Int
+	TotalCollateral *big.Int
 	Assets       []AccountAsset
 }
 

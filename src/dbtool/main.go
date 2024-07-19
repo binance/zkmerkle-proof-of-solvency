@@ -37,8 +37,20 @@ func main() {
 	checkProverStatus := flag.Bool("check_prover_status", false, "check prover status")
 	remotePasswdConfig := flag.String("remote_password_config", "", "fetch password from aws secretsmanager")
 	queryCexAssetsConfig := flag.Bool("query_cex_assets", false, "query cex assets info")
+	queryWitnessData := flag.Int("query_witness_data", -1, "query witness data by height")
+	queryAccountData := flag.Int("query_account_data", -1, "query account data by index")
 
 	flag.Parse()
+
+	newLogger := logger.New(
+		log.New(os.Stdout, "\r\n", log.LstdFlags), // io writer
+		logger.Config{
+			SlowThreshold:             60 * time.Second, // Slow SQL threshold
+			LogLevel:                  logger.Silent,    // Log level
+			IgnoreRecordNotFoundError: true,             // Ignore ErrRecordNotFound error for logger
+			Colorful:                  false,            // Disable color
+		},
+	)
 
 	if *remotePasswdConfig != "" {
 		s, err := utils.GetMysqlSource(dbtoolConfig.MysqlDataSource, *remotePasswdConfig)
@@ -95,15 +107,6 @@ func main() {
 	}
 
 	if *checkProverStatus {
-		newLogger := logger.New(
-			log.New(os.Stdout, "\r\n", log.LstdFlags), // io writer
-			logger.Config{
-				SlowThreshold:             60 * time.Second, // Slow SQL threshold
-				LogLevel:                  logger.Silent,    // Log level
-				IgnoreRecordNotFoundError: true,             // Ignore ErrRecordNotFound error for logger
-				Colorful:                  false,            // Disable color
-			},
-		)
 		db, err := gorm.Open(mysql.Open(dbtoolConfig.MysqlDataSource), &gorm.Config{
 			Logger: newLogger,
 		})
@@ -118,6 +121,9 @@ func main() {
 			panic(err.Error())
 		}
 		proofCounts, err := proofModel.GetRowCounts()
+		if err != nil {
+			panic("proof table get row counts error:" + err.Error())
+		}
 		fmt.Printf("Total witness item %d, Published item %d, Pending item %d, Finished item %d\n", witnessCounts[0], witnessCounts[1], witnessCounts[2], witnessCounts[3])
 		fmt.Println(witnessCounts[0] - proofCounts)
 	}
@@ -145,5 +151,37 @@ func main() {
 		}
 		cexAssetsInfoBytes, _ := json.Marshal(newAssetsInfo)
 		fmt.Println(string(cexAssetsInfoBytes))
+	}
+
+	if *queryWitnessData != -1 {
+		db, err := gorm.Open(mysql.Open(dbtoolConfig.MysqlDataSource), &gorm.Config{
+			Logger: newLogger,
+		})
+		if err != nil {
+			panic(err.Error())
+		}
+		witnessModel := witness.NewWitnessModel(db, dbtoolConfig.DbSuffix)
+
+		w, err := witnessModel.GetBatchWitnessByHeight(int64(*queryWitnessData))
+		if err != nil {
+			panic(err.Error())
+		}
+		fmt.Printf("%x", w.WitnessData)
+	}
+
+	if *queryAccountData != -1 {
+		db, err := gorm.Open(mysql.Open(dbtoolConfig.MysqlDataSource), &gorm.Config{
+			Logger: newLogger,
+		})
+		if err != nil {
+			panic(err.Error())
+		}
+		userProofModel := model.NewUserProofModel(db, dbtoolConfig.DbSuffix)
+
+		u, err := userProofModel.GetUserProofByIndex(uint32(*queryAccountData))
+		if err != nil {
+			panic(err.Error())
+		}
+		fmt.Println(u.Config)
 	}
 }

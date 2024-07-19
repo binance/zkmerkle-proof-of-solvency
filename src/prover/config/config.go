@@ -8,5 +8,6 @@ type Config struct {
 		Type     string
 		Password string
 	}
-	ZkKeyName string
+	ZkKeyName []string
+	AssetsCountTiers []int
 }

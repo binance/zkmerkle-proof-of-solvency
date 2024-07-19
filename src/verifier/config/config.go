@@ -7,7 +7,8 @@ import (
 
 type Config struct {
 	ProofTable    string
-	ZkKeyName     string
+	ZkKeyName     []string
+	AssetsCountTiers []int
 	CexAssetsInfo []utils.CexAssetInfo
 }
 
@@ -16,6 +17,7 @@ type UserConfig struct {
 	AccountIdHash string
 	TotalEquity   big.Int
 	TotalDebt     big.Int
+	TotalCollateral big.Int
 	Root          string
 	Assets        []utils.AccountAsset
 	Proof         []string
