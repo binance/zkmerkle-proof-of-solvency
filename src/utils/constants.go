@@ -10,7 +10,7 @@ import (
 const (
 	// BatchCreateUserOpsCounts = 864
 	AccountTreeDepth         = 28
-	AssetCounts              = 350
+	AssetCounts              = 500
 	// TierCount: must be even number, the cex assets commitment will depend on the TierCount/2 parts
 	TierCount				 = 12
 	RedisLockKey             = "prover_mutex_key"
@@ -62,8 +62,8 @@ var (
 	// the key is the number of assets user own
 	// the value is the number of batch create user ops
 	BatchCreateUserOpsCountsTiers = map[int]int {
-		350: 128,
-		50: 580,
+		500: 92,
+		50: 460,
 	}
 	AssetCountsTiers = make([]int, 0)
 

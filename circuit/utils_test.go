@@ -32,25 +32,40 @@ type MockCollateralCircuit struct {
 func (circuit MockCollateralCircuit) Define(api API) error {
 	r := rangecheck.New(api)
 	for i := 0; i < len(circuit.CAssetInfo); i++ {
-		GenerateRapidArithmeticForCollateral(api, r, circuit.CAssetInfo[i].VipLoanRatios)
-		GenerateRapidArithmeticForCollateral(api, r, circuit.CAssetInfo[i].MarginRatios)
-		GenerateRapidArithmeticForCollateral(api, r, circuit.CAssetInfo[i].PortfolioMarginRatios)
+		generateRapidArithmeticForCollateral(api, r, circuit.CAssetInfo[i].VipLoanRatios)
+		generateRapidArithmeticForCollateral(api, r, circuit.CAssetInfo[i].MarginRatios)
+		generateRapidArithmeticForCollateral(api, r, circuit.CAssetInfo[i].PortfolioMarginRatios)
 	}
-	t := ConstructTierRatiosLookupTable(api, circuit.CAssetInfo)
+	t0 :=constructViploanTierRatiosLookupTable(api, circuit.CAssetInfo)
+	t1 :=constructMarginTierRatiosLookupTable(api, circuit.CAssetInfo)
+	t2 :=constructPortfolioTierRatiosLookupTable(api, circuit.CAssetInfo)
 
 	for i := 0; i < len(circuit.UAssetInfo); i++ {
-		collateralValues := GetAndCheckTierRatiosQueryResults(api, r, t, circuit.UAssetInfo[i], 
+		realViploanCollateralValue := getAndCheckTierRatiosQueryResults(api, r, t0, circuit.UAssetInfo[i].AssetIndex, 
 											circuit.UAssetMataInfo[i].VipLoanCollateral,
-											circuit.UAssetMataInfo[i].MarginCollateral,
-											circuit.UAssetMataInfo[i].PortfolioMarginCollateral,
+											circuit.UAssetInfo[i].VipLoanCollateralIndex,
+											circuit.UAssetInfo[i].VipLoanCollateralFlag,
 											circuit.CAssetInfo[circuit.AssetId[i]].BasePrice, 
-											3*(len(circuit.CAssetInfo[circuit.AssetId[i]].VipLoanRatios)+1), 
-											3*(len(circuit.CAssetInfo[circuit.AssetId[i]].MarginRatios)+1), 
+											3*(len(circuit.CAssetInfo[circuit.AssetId[i]].VipLoanRatios)+1))
+
+
+		realMarginCollateralValue := getAndCheckTierRatiosQueryResults(api, r, t1, circuit.UAssetInfo[i].AssetIndex,
+											circuit.UAssetMataInfo[i].MarginCollateral,
+											circuit.UAssetInfo[i].MarginCollateralIndex,
+											circuit.UAssetInfo[i].MarginCollateralFlag,
+											circuit.CAssetInfo[circuit.AssetId[i]].BasePrice,
+											3*(len(circuit.CAssetInfo[circuit.AssetId[i]].MarginRatios)+1))
+		
+		realPortfolioMarginCollateralValue := getAndCheckTierRatiosQueryResults(api, r, t2, circuit.UAssetInfo[i].AssetIndex,
+											circuit.UAssetMataInfo[i].PortfolioMarginCollateral,
+											circuit.UAssetInfo[i].PortfolioMarginCollateralIndex,
+											circuit.UAssetInfo[i].PortfolioMarginCollateralFlag,
+											circuit.CAssetInfo[circuit.AssetId[i]].BasePrice,
 											3*(len(circuit.CAssetInfo[circuit.AssetId[i]].PortfolioMarginRatios)+1))
 
-		api.AssertIsEqual(circuit.ExpectedVipLoanCollateral[i], collateralValues[0])
-		api.AssertIsEqual(circuit.ExpectedMarginCollateral[i], collateralValues[1])
-		api.AssertIsEqual(circuit.ExpectedPortfolioMarginCollateral[i], collateralValues[2])
+		api.AssertIsEqual(circuit.ExpectedVipLoanCollateral[i], realViploanCollateralValue)
+		api.AssertIsEqual(circuit.ExpectedMarginCollateral[i], realMarginCollateralValue)
+		api.AssertIsEqual(circuit.ExpectedPortfolioMarginCollateral[i], realPortfolioMarginCollateralValue)
 	}
 	return nil
 }

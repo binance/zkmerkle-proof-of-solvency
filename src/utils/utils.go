@@ -265,7 +265,7 @@ func ParseAssetIndexFromUserFile(userFilename string) ([]string, error) {
 	cexAssetsList := make([]string, assetCounts)
 	
 	for i := 0; i < assetCounts; i++ {
-		cexAssetsList[i] = data[i*6+4]
+		cexAssetsList[i] = strings.ToLower(data[i*6+4])
 	}
 	return cexAssetsList, nil
 }
@@ -374,7 +374,7 @@ func ParseCexAssetInfoFromFile(name string, assetIndexes []string) ([]CexAssetIn
 			return nil, errors.New("cex asset data wrong")
 		}
 		tmpCexAssetInfo := CexAssetInfo {
-			Symbol: data[i][0],
+			Symbol: strings.ToLower(data[i][0]),
 		}
 		multiplier := int64(100000000)
 		if AssetTypeForTwoDigits[tmpCexAssetInfo.Symbol] {

@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"runtime"
 	"sort"
 	"time"
 
@@ -53,7 +54,11 @@ func ComputeAccountRootHash(userProofConfig *config.Config) {
 		totalOpsNumber := len(account)
 		fmt.Println("the asset counts of user is ", key, "total ops number is ", totalOpsNumber)
 		chs := make(chan AccountLeave, 1000)
-		workers := 32
+		cpuCores := runtime.NumCPU()
+		workers := 1
+		if cpuCores > 2 {
+			workers = cpuCores - 2
+		}
 		results := make(chan bool, workers)
 		averageAccounts := (totalOpsNumber + workers - 1) / workers
 		actualWorkers := 0

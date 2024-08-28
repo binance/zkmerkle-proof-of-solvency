@@ -8,7 +8,7 @@ import (
 	"math/big"
 )
 
-func VerifyMerkleProof(api API, merkleRoot Variable, node Variable, proofSet, helper []Variable) {
+func verifyMerkleProof(api API, merkleRoot Variable, node Variable, proofSet, helper []Variable) {
 	for i := 0; i < len(proofSet); i++ {
 		api.AssertIsBoolean(helper[i])
 		d1 := api.Select(helper[i], proofSet[i], node)
@@ -19,7 +19,7 @@ func VerifyMerkleProof(api API, merkleRoot Variable, node Variable, proofSet, he
 	api.AssertIsEqual(merkleRoot, node)
 }
 
-func UpdateMerkleProof(api API, node Variable, proofSet, helper []Variable) (root Variable) {
+func updateMerkleProof(api API, node Variable, proofSet, helper []Variable) (root Variable) {
 	for i := 0; i < len(proofSet); i++ {
 		api.AssertIsBoolean(helper[i])
 		d1 := api.Select(helper[i], proofSet[i], node)
@@ -30,17 +30,12 @@ func UpdateMerkleProof(api API, node Variable, proofSet, helper []Variable) (roo
 	return root
 }
 
-func AccountIdToMerkleHelper(api API, accountId Variable) []Variable {
+func accountIdToMerkleHelper(api API, accountId Variable) []Variable {
 	merkleHelpers := api.ToBinary(accountId, utils.AccountTreeDepth)
 	return merkleHelpers
 }
 
-// check value is in [0, 2^64-1] range
-func CheckValueInRange(api API, value Variable) {
-	api.ToBinary(value, 64)
-}
-
-func ComputeUserAssetsCommitment(api API, assets []UserAssetMeta) Variable {
+func computeUserAssetsCommitment(api API, assets []UserAssetMeta) Variable {
 	nEles := (len(assets)*5 + 2) / 3
 	tmpUserAssets := make([]Variable, nEles)
 	flattenAssets := make([]Variable, nEles*3)
@@ -65,7 +60,7 @@ func ComputeUserAssetsCommitment(api API, assets []UserAssetMeta) Variable {
 // one variable: TotalEquity + TotalDebt + BasePrice
 // one variable: VipLoanCollateral + MarginCollateral + PortfolioMarginCollateral
 // one variable contain two TierRatios and the length of TierRatios is even
-func GetVariableCountOfCexAsset(cexAsset CexAssetInfo) int {
+func getVariableCountOfCexAsset(cexAsset CexAssetInfo) int {
 	res := 2 
 	res += len(cexAsset.VipLoanRatios) / 2
 	res += len(cexAsset.MarginRatios) / 2
@@ -73,7 +68,7 @@ func GetVariableCountOfCexAsset(cexAsset CexAssetInfo) int {
 	return res
 }
 
-func ConvertTierRatiosToVariables(api API, ratios []TierRatio, res []Variable) {
+func convertTierRatiosToVariables(api API, ratios []TierRatio, res []Variable) {
 	for i := 0; i < len(ratios); i += 2 {
 		v := api.Add(ratios[i].Ratio, api.Mul(ratios[i].BoundaryValue, utils.Uint8MaxValueFr))
 		v1 := api.Add(api.Mul(ratios[i+1].Ratio, utils.Uint126MaxValueFr), api.Mul(ratios[i+1].BoundaryValue, utils.Uint134MaxValueFr))
@@ -81,27 +76,29 @@ func ConvertTierRatiosToVariables(api API, ratios []TierRatio, res []Variable) {
 	}
 }
 
-func FillCexAssetCommitment(api API, asset CexAssetInfo, currentIndex int, commitments []Variable) {
-	counts := GetVariableCountOfCexAsset(asset)
+func fillCexAssetCommitment(api API, asset CexAssetInfo, currentIndex int, commitments []Variable) {
+	counts := getVariableCountOfCexAsset(asset)
 	commitments[currentIndex*counts] = api.Add(api.Mul(asset.TotalEquity, utils.Uint64MaxValueFrSquare),
 			api.Mul(asset.TotalDebt, utils.Uint64MaxValueFr), asset.BasePrice)
 	
 	commitments[currentIndex*counts+1] = api.Add(api.Mul(asset.VipLoanCollateral, utils.Uint64MaxValueFrSquare),
 			api.Mul(asset.MarginCollateral, utils.Uint64MaxValueFr), asset.PortfolioMarginCollateral)
 
-	ConvertTierRatiosToVariables(api, asset.VipLoanRatios, commitments[currentIndex*counts+2:])
-	ConvertTierRatiosToVariables(api, asset.MarginRatios, commitments[currentIndex*counts+2+len(asset.VipLoanRatios)/2:])
-	ConvertTierRatiosToVariables(api, asset.PortfolioMarginRatios, commitments[currentIndex*counts+2+len(asset.VipLoanRatios)/2+len(asset.MarginRatios)/2:])
+	convertTierRatiosToVariables(api, asset.VipLoanRatios, commitments[currentIndex*counts+2:])
+	convertTierRatiosToVariables(api, asset.MarginRatios, commitments[currentIndex*counts+2+len(asset.VipLoanRatios)/2:])
+	convertTierRatiosToVariables(api, asset.PortfolioMarginRatios, commitments[currentIndex*counts+2+len(asset.VipLoanRatios)/2+len(asset.MarginRatios)/2:])
 }
 
-func GenerateRapidArithmeticForCollateral(api API, r frontend.Rangechecker, tierRatios []TierRatio) {
-	tierRatios[0].PrecomputedValue = CheckAndGetIntegerDivisionRes(api, r, api.Mul(tierRatios[0].BoundaryValue, tierRatios[0].Ratio))
+func generateRapidArithmeticForCollateral(api API, r frontend.Rangechecker, tierRatios []TierRatio) {
+	tierRatios[0].PrecomputedValue = checkAndGetIntegerDivisionRes(api, r, api.Mul(tierRatios[0].BoundaryValue, tierRatios[0].Ratio))
+	api.AssertIsLessOrEqualNOp(tierRatios[0].Ratio, utils.PercentageMultiplierFr, 8, true)
+	api.AssertIsLessOrEqualNOp(tierRatios[0].BoundaryValue, utils.MaxTierBoundaryValueFr, 128, true)
 	for i := 1; i < len(tierRatios); i++ {
 		api.AssertIsLessOrEqualNOp(tierRatios[i-1].BoundaryValue, tierRatios[i].BoundaryValue, 128, true)
 		api.AssertIsLessOrEqualNOp(tierRatios[i].Ratio, utils.PercentageMultiplierFr, 8, true)
 		api.AssertIsLessOrEqualNOp(tierRatios[i].BoundaryValue, utils.MaxTierBoundaryValueFr, 128, true)
 		diffBoundary := api.Sub(tierRatios[i].BoundaryValue, tierRatios[i-1].BoundaryValue)
-		current := CheckAndGetIntegerDivisionRes(api, r, api.Mul(diffBoundary, tierRatios[i].Ratio))
+		current := checkAndGetIntegerDivisionRes(api, r, api.Mul(diffBoundary, tierRatios[i].Ratio))
 		tierRatios[i].PrecomputedValue = api.Add(tierRatios[i-1].PrecomputedValue, current)
 	}
 
@@ -109,8 +106,6 @@ func GenerateRapidArithmeticForCollateral(api API, r frontend.Rangechecker, tier
 		r.Check(tierRatios[i].PrecomputedValue, 128)
 		r.Check(tierRatios[i].Ratio, 8)
 		r.Check(tierRatios[i].BoundaryValue, 128)
-		// TODO
-		// CheckAndGetIntegerDivisionRes(api, r, tierRatios[i].BoundaryValue)
 	}
 }
 
@@ -123,118 +118,41 @@ func IntegerDivision(_ *big.Int, in []*big.Int, out []*big.Int) error {
 	return nil
 }
 
-func ComputeCollateral(api API, collateral Variable, tierRatios []TierRatio) Variable {
-	var res Variable
-	var firstFlag Variable = 0
-
-	compareRes := api.CmpNOp(tierRatios[0].BoundaryValue, collateral, 128, true)
-	flag := api.IsZero(api.Sub(compareRes, 1))
-	firstFlag = api.Xor(firstFlag, flag)
-	res = api.Select(firstFlag, api.Mul(collateral, tierRatios[0].Ratio), 0)
-	
-	for i := 1; i < len(tierRatios); i++ {
-		compareRes = api.CmpNOp(tierRatios[i].BoundaryValue, collateral, 128, true)
-		// flag is true if tierRatios[i].BoundaryValue > collateral
-		// flag is false if tierRatios[i].BoundaryValue <= collateral
-		flag = api.IsZero(api.Sub(compareRes, 1))
-		// Only the first time that boundary value is greater than collateral, 
-		// the firstFlag to 1. Otherwise, the firstFlag is 0.
-		firstFlag = api.Xor(firstFlag, flag)
-		
-		v := api.Select(firstFlag, tierRatios[i-1].PrecomputedValue, 0)
-		res = api.Add(res, v)
-
-		v1 := api.Select(firstFlag, api.Sub(collateral, tierRatios[i-1].BoundaryValue), 0)
-		v1 = api.Div(api.Mul(v1, tierRatios[i].Ratio), utils.PercentageMultiplierFr)
-		res = api.Add(res, v1)
-		firstFlag = api.Select(flag, 1, 0)
-	}
-	// The last tier boundary value is less or equal than collateral
-	res = api.Select(firstFlag, res, tierRatios[len(tierRatios)-1].PrecomputedValue)
-	return res
-}
-
-func GetAndCheckTierRatiosQueryResults(api API, r frontend.Rangechecker, tierRatiosTable *logderivlookup.Table, userAssets UserAssetInfo, 
-									userVipLoanCollateral, userMarginCollateral, userPortfolioMarginCollateral Variable,
-									assetPrice Variable, vipLoanTierRatiosLen, marginTierRatiosLen, portfolioMarginTierRatiosLen int) (collateralValueRes [3]Variable) {
-	
+func getAndCheckTierRatiosQueryResults(api API, r frontend.Rangechecker, tierRatiosTable *logderivlookup.Table,
+						assetIndex, userCollateral, collateralIndex, collateralFlag, assetPrice, collateralTierRatiosLen Variable) (collateralValueRes Variable) {
 	// All indexes are shifted by 1 overall because we add a dummy tier ratio at the beginning
-	// 18 = 3 * 6: 3 means the number of collateral types, 6 means the number of tier ratios queires for each collateral type
+	// 18 = 3 * 6: 3 means the number of collateral types, 6 means the number of tier ratios queries for each collateral type
 	numOfTierRatioFields := 3
-	queries := make([]Variable, 18)
-	gap := api.Mul(userAssets.AssetIndex, (vipLoanTierRatiosLen + marginTierRatiosLen + portfolioMarginTierRatiosLen))
-	
-	vipLoanCollateralIndex := userAssets.VipLoanCollateralIndex
-	for p := 0; p < 2; p++ {
-		startPosition := api.Mul(vipLoanCollateralIndex, 3)
-		queries[p*numOfTierRatioFields+0] = api.Add(startPosition, gap)
-		queries[p*numOfTierRatioFields+1] = api.Add(startPosition, api.Add(gap, 1))
-		queries[p*numOfTierRatioFields+2] = api.Add(startPosition, api.Add(gap, 2))
-		vipLoanCollateralIndex = api.Add(vipLoanCollateralIndex, 1)
+	queries := make([]Variable, 6)
+	gap := api.Mul(assetIndex, collateralTierRatiosLen)
+	for i := 0; i < 2; i++ {
+		startPosition := api.Mul(collateralIndex, 3)
+		queries[i*numOfTierRatioFields+0] = api.Add(startPosition, gap)
+		queries[i*numOfTierRatioFields+1] = api.Add(startPosition, api.Add(gap, 1))
+		queries[i*numOfTierRatioFields+2] = api.Add(startPosition, api.Add(gap, 2))
+		collateralIndex = api.Add(collateralIndex, 1)
 	}
-
-	gap = api.Add(gap, vipLoanTierRatiosLen)
-	marginCollateralIndex := userAssets.MarginCollateralIndex
-	for p := 0; p < 2; p++ {
-		startPosition := api.Mul(marginCollateralIndex, 3)
-		queries[p*numOfTierRatioFields+0+6] = api.Add(startPosition, gap)
-		queries[p*numOfTierRatioFields+1+6] = api.Add(startPosition, api.Add(gap, 1))
-		queries[p*numOfTierRatioFields+2+6] = api.Add(startPosition, api.Add(gap, 2))
-		marginCollateralIndex = api.Add(marginCollateralIndex, 1)
-	}
-
-	gap = api.Add(gap, marginTierRatiosLen)
-	portfolioMarginCollateralIndex := userAssets.PortfolioMarginCollateralIndex
-	for p := 0; p < 2; p++ {
-		queries[p*numOfTierRatioFields+0+12] = api.Add(api.Mul(portfolioMarginCollateralIndex, 3), gap)
-		queries[p*numOfTierRatioFields+1+12] = api.Add(api.Mul(portfolioMarginCollateralIndex, 3), api.Add(gap, 1))
-		queries[p*numOfTierRatioFields+2+12] = api.Add(api.Mul(portfolioMarginCollateralIndex, 3), api.Add(gap, 2))
-		portfolioMarginCollateralIndex = api.Add(portfolioMarginCollateralIndex, 1)
-	}
-
 	results := tierRatiosTable.Lookup(queries...)
-
-	vipLoanCollateralValue := api.Mul(userVipLoanCollateral, assetPrice)
+	collateralValue := api.Mul(userCollateral, assetPrice)
 	// results[0] is less than 2^128 which is constrainted in the GenerateRapidArithmeticForCollateral
-	cr := api.CmpNOp(vipLoanCollateralValue, results[0], 128, true)
+	cr := api.CmpNOp(collateralValue, results[0], 128, true)
 	// cr only can be 0 or 1
 	// cr is 0 in the special case that userAssets.VipLoanCollateral is 0;
-	api.AssertIsEqual(cr, api.Select(api.IsZero(vipLoanCollateralValue), 0, 1))
+	api.AssertIsEqual(cr, api.Select(api.IsZero(collateralValue), 0, 1))
 	// results[3] is the upper boundary value
-	upperBoundaryValue := api.Select(api.IsZero(userAssets.VipLoanCollateralFlag), results[3], utils.MaxTierBoundaryValueFr)
-	api.AssertIsLessOrEqualNOp(vipLoanCollateralValue, upperBoundaryValue, 128, true)
+	upperBoundaryValue := api.Select(api.IsZero(collateralFlag), results[3], utils.MaxTierBoundaryValueFr)
+	api.AssertIsLessOrEqualNOp(collateralValue, upperBoundaryValue, 128, true)
 	// results[4] is ratio of upper boundary value
-	// diffValue = (vipLoanCollateralValue - lower boundary value) * ratio
-	diffValue := api.Mul(api.Sub(vipLoanCollateralValue, results[0]), results[4])
-	quotient := CheckAndGetIntegerDivisionRes(api, r, diffValue)
+	// diffValue = (collateralValue - lower boundary value) * ratio
+	diffValue := api.Mul(api.Sub(collateralValue, results[0]), results[4])
+	quotient := checkAndGetIntegerDivisionRes(api, r, diffValue)
 	// Check diffValue is 
 	// results[2] is the precomputed value of lower boundary value
-	collateralValueRes[0] = api.Select(api.IsZero(userAssets.VipLoanCollateralFlag), api.Add(results[2], quotient), results[5])
-
-	marginCollateralValue := api.Mul(userMarginCollateral, assetPrice)
-	cr = api.CmpNOp(marginCollateralValue, results[6], 128, true)
-	api.AssertIsEqual(cr, api.Select(api.IsZero(marginCollateralValue), 0, 1))
-	upperBoundaryValue = api.Select(api.IsZero(userAssets.MarginCollateralFlag), results[9], utils.MaxTierBoundaryValueFr)
-	api.AssertIsLessOrEqualNOp(marginCollateralValue, upperBoundaryValue, 128, true)
-	collateralValueRes[1] = marginCollateralValue
-	diffValue = api.Mul(api.Sub(marginCollateralValue, results[6]), results[10])
-	quotient = CheckAndGetIntegerDivisionRes(api, r, diffValue)
-	collateralValueRes[1] = api.Select(api.IsZero(userAssets.MarginCollateralFlag), api.Add(results[8], quotient), results[11])
-
-	portfolioMarginCollateralValue := api.Mul(userPortfolioMarginCollateral, assetPrice)
-	cr = api.CmpNOp(portfolioMarginCollateralValue, results[12], 128, true)
-	api.AssertIsEqual(cr, api.Select(api.IsZero(portfolioMarginCollateralValue), 0, 1))
-	upperBoundaryValue = api.Select(api.IsZero(userAssets.PortfolioMarginCollateralFlag), results[15], utils.MaxTierBoundaryValueFr)
-	api.AssertIsLessOrEqualNOp(portfolioMarginCollateralValue, upperBoundaryValue, 128, true)
-	collateralValueRes[2] = portfolioMarginCollateralValue
-	diffValue = api.Mul(api.Sub(portfolioMarginCollateralValue, results[12]), results[16])
-	quotient = CheckAndGetIntegerDivisionRes(api, r, diffValue)
-	collateralValueRes[2] = api.Select(api.IsZero(userAssets.PortfolioMarginCollateralFlag), api.Add(results[14], quotient), results[17])
-
+	collateralValueRes = api.Select(api.IsZero(collateralFlag), api.Add(results[2], quotient), results[5])
 	return collateralValueRes
 }
 
-func CheckAndGetIntegerDivisionRes(api API, r frontend.Rangechecker, dividend Variable) (quotient Variable) {
+func checkAndGetIntegerDivisionRes(api API, r frontend.Rangechecker, dividend Variable) (quotient Variable) {
 	quotientRes, err := api.NewHint(IntegerDivision, 2, dividend, utils.PercentageMultiplierFr)
 	if err != nil {
 		panic(err)
@@ -246,7 +164,7 @@ func CheckAndGetIntegerDivisionRes(api API, r frontend.Rangechecker, dividend Va
 	return quotientRes[0]
 }
 
-func ConstructTierRatiosLookupTable(api API, cexAssetInfo []CexAssetInfo) *logderivlookup.Table {
+func constructViploanTierRatiosLookupTable(api API, cexAssetInfo []CexAssetInfo) *logderivlookup.Table {
 	t := logderivlookup.New(api)
 	for i := 0; i < len(cexAssetInfo); i++ {
 		// dummy tier ratio
@@ -258,7 +176,14 @@ func ConstructTierRatiosLookupTable(api API, cexAssetInfo []CexAssetInfo) *logde
 			t.Insert(cexAssetInfo[i].VipLoanRatios[j].Ratio)
 			t.Insert(cexAssetInfo[i].VipLoanRatios[j].PrecomputedValue)
 		}
+	}
+	return t
+}
 
+func constructMarginTierRatiosLookupTable(api API, cexAssetInfo []CexAssetInfo) *logderivlookup.Table {
+	t := logderivlookup.New(api)
+	for i := 0; i < len(cexAssetInfo); i++ {
+		// dummy tier ratio
 		for i := 0; i < 3; i++ {
 			t.Insert(0)
 		}
@@ -267,7 +192,14 @@ func ConstructTierRatiosLookupTable(api API, cexAssetInfo []CexAssetInfo) *logde
 			t.Insert(cexAssetInfo[i].MarginRatios[j].Ratio)
 			t.Insert(cexAssetInfo[i].MarginRatios[j].PrecomputedValue)
 		}
+	}
+	return t
+}
 
+func constructPortfolioTierRatiosLookupTable(api API, cexAssetInfo []CexAssetInfo) *logderivlookup.Table {
+	t := logderivlookup.New(api)
+	for i := 0; i < len(cexAssetInfo); i++ {
+		// dummy tier ratio
 		for i := 0; i < 3; i++ {
 			t.Insert(0)
 		}
@@ -280,7 +212,7 @@ func ConstructTierRatiosLookupTable(api API, cexAssetInfo []CexAssetInfo) *logde
 	return t
 }
 
-func CalcAndSetCollateralInfo(assetIndex int, ua *UserAssetInfo, um *utils.AccountAsset, cexInfo []utils.CexAssetInfo) {
+func calcAndSetCollateralInfo(assetIndex int, ua *UserAssetInfo, um *utils.AccountAsset, cexInfo []utils.CexAssetInfo) {
 	p := cexInfo[assetIndex]
 	assestPrice := new(big.Int).SetUint64(p.BasePrice)
 	userVipLoanCollateral := new(big.Int).SetUint64(um.VipLoan)

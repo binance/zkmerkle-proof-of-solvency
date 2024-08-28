@@ -29,7 +29,7 @@ import (
 func TestBatchCreateUserCircuit(t *testing.T) {
 	solver.RegisterHint(IntegerDivision)
 	targetAssetCounts := 30
-	totalAssetsCount := 350
+	totalAssetsCount := 500
 	userOpsPerBatch := 1
 	
 	targetCircuitAssetCounts := 0
@@ -129,7 +129,7 @@ func TestBatchCreateUserCircuit(t *testing.T) {
 
 func TestBatchCreateUserCircuitFromFile(t *testing.T) {
 	targetAssetCounts := 30
-	totalAssetsCount := 350
+	totalAssetsCount := 500
 	userOpsPerBatch := 1
 	targetCircuitAssetCounts := 0
 	for _, v := range utils.AssetCountsTiers {

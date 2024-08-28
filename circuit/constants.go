@@ -4,5 +4,5 @@ import "math/big"
 
 var (
 	//  is poseidon hash(empty account info)
-	EmptyAccountLeafNodeHash, _ = new(big.Int).SetString("1cc3ed1b0e66b98f30582ec8a02dd32bd938edc613e7616076f5c03d3c04f02f", 16)
+	EmptyAccountLeafNodeHash, _ = new(big.Int).SetString("0450b4105d6f44db0c827ac0ead6cd4947d878ee70af627710faa1d8cf6c45f5", 16)
 )
