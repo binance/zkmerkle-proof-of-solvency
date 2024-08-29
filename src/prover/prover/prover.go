@@ -228,7 +228,7 @@ func (p *Prover) GenerateAndVerifyProof(
 	}
 	endTime2 := time.Now().UnixMilli()
 	fmt.Println("proof verification cost ", endTime2-endTime, " ms")
-	return proof, len(verifyWitness.CreateUserOps[0].Assets), nil
+	return proof, len(circuitWitness.CreateUserOps[0].Assets), nil
 }
 
 func (p *Prover) LoadSnarkParamsOnce(targerAssetsCount int) {

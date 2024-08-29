@@ -61,15 +61,8 @@ func main() {
 		}
 
 		// padding user assets
-		userAssets := make([]utils.AccountAsset, utils.AssetCounts)
-		for i := 0; i < utils.AssetCounts; i++ {
-			userAssets[i].Index = uint16(i)
-		}
-		for i := 0; i < len(userConfig.Assets); i++ {
-			userAssets[userConfig.Assets[i].Index] = userConfig.Assets[i]
-		}
 		hasher := poseidon.NewPoseidon()
-		assetCommitment := utils.ComputeUserAssetsCommitment(&hasher, userAssets)
+		assetCommitment := utils.ComputeUserAssetsCommitment(&hasher, userConfig.Assets)
 		hasher.Reset()
 		// compute new account leaf node hash
 		accountIdHash, err := hex.DecodeString(userConfig.AccountIdHash)
@@ -127,7 +120,7 @@ func main() {
 		prevCexAssetListCommitments := make([][]byte, 2)
 		prevAccountTreeRoots := make([][]byte, 2)
 		// depth-28 empty account tree root
-		emptyAccountTreeRoot, err := hex.DecodeString("09ee5714ad2f9f9b63ff38b3cf84beba9017302d920d2fa151376b24708e495b")
+		emptyAccountTreeRoot, err := hex.DecodeString("08696bfcb563a2ee4dde9e1dbd34f68d3f4643df6e3709cdb1855c9f886240c7")
 		if err != nil {
 			fmt.Println("wrong empty empty account tree root")
 			return
@@ -213,6 +206,8 @@ func main() {
 
 			if string(accountTreeRoots[0]) != string(prevAccountTreeRoots[1]) ||
 				string(cexAssetListCommitments[0]) != string(prevCexAssetListCommitments[1]) {
+				fmt.Printf("accoun tree root: %x:%x\n", accountTreeRoots[0], prevAccountTreeRoots[1])
+				fmt.Printf("cex asset list commitment: %x:%x\n", cexAssetListCommitments[0], prevCexAssetListCommitments[1])
 				fmt.Println("mismatch account tree root or cex asset list commitment:", batchNumber)
 				return
 			}

@@ -1,10 +1,12 @@
 package utils
 
 import (
+	// "fmt"
 	"math/big"
 	"sort"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
+	"github.com/consensys/gnark-crypto/ecc/bn254/fr/poseidon"
 )
 
 const (
@@ -63,7 +65,7 @@ var (
 	// the value is the number of batch create user ops
 	BatchCreateUserOpsCountsTiers = map[int]int {
 		500: 92,
-		50: 460,
+		50: 700,
 	}
 	AssetCountsTiers = make([]int, 0)
 
@@ -81,4 +83,9 @@ func init() {
 		AssetCountsTiers = append(AssetCountsTiers, k)
 	}
 	sort.Ints(AssetCountsTiers)
+
+	zero := &fr.Element{0, 0, 0, 0}
+	tempHash := poseidon.Poseidon(zero, zero, zero, zero, zero).Bytes()
+	NilAccountHash = tempHash[:]
+	// fmt.Printf("NilAccountHash: %x\n", NilAccountHash)
 }

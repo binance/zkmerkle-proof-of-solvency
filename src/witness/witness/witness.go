@@ -6,7 +6,6 @@ import (
 	"encoding/gob"
 	"fmt"
 	"log"
-	"math/big"
 	"os"
 	"runtime"
 	"sort"
@@ -147,8 +146,8 @@ func (w *Witness) Run() {
 					}
 					lowAccountIndex := index*averageCount + (j-startBatchNum)*userOpsPerBatch
 					highAccountIndex := averageCount + lowAccountIndex
-					if highAccountIndex > (j+1) * userOpsPerBatch {
-						highAccountIndex = (j+1) * userOpsPerBatch
+					if highAccountIndex > (j-startBatchNum+1) * userOpsPerBatch {
+						highAccountIndex = (j-startBatchNum+1) * userOpsPerBatch
 					}
 					currentAccountIndex := (j-startBatchNum) * userOpsPerBatch
 					// fmt.Printf("worker num: %d, lowAccountInde: %d, highAccountIndex: %d, current: %d\n", index, lowAccountIndex, highAccountIndex, currentAccountIndex)
@@ -308,21 +307,8 @@ func (w *Witness) GetBatchNumber() int {
 
 func (w *Witness) PaddingAccounts() {
 
-	paddingStartIndex := w.totalOpsNumber
+	paddingStartIndex := int(w.totalOpsNumber)
 	for k, v := range w.ops {
-		opsPerBatch := utils.BatchCreateUserOpsCountsTiers[k]
-		batchCounts := (len(w.ops[k]) + opsPerBatch - 1) / opsPerBatch
-		paddingAccountCounts := batchCounts*opsPerBatch - len(v)
-		for i := 0; i < paddingAccountCounts; i++ {
-			emptyAccount := utils.AccountInfo{
-				AccountIndex: paddingStartIndex,
-				TotalEquity:  new(big.Int).SetInt64(0),
-				TotalDebt:    new(big.Int).SetInt64(0),
-				TotalCollateral: new(big.Int).SetInt64(0),
-				Assets:       make([]utils.AccountAsset, 0),
-			}
-			w.ops[k] = append(w.ops[k], emptyAccount)
-			paddingStartIndex += 1
-		}
+		paddingStartIndex, w.ops[k] = utils.PaddingAccounts(v, k, paddingStartIndex)
 	}
 }

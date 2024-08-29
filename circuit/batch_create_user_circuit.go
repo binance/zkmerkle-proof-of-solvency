@@ -175,6 +175,7 @@ func (b BatchCreateUserCircuit) Define(api API) error {
 		// construct query to get user assets
 		userAssetsQueries[i] = make([]Variable, len(userAssets)*5)
 		assetPriceQueries := make([]Variable, len(userAssets))
+		numOfAssetsFields := 6
 		for j := 0; j < len(userAssets); j++ {
 			p := api.Mul(userAssets[j].AssetIndex, 5)
 			for k := 0; k < 5; k++ {
@@ -185,6 +186,7 @@ func (b BatchCreateUserCircuit) Define(api API) error {
 		userAssetsResults[i] = userAssetsLookupTable.Lookup(userAssetsQueries[i]...)
 		assetPriceResponses := assetPriceTable.Lookup(assetPriceQueries...)
 		
+		flattenAssetFieldsForHash := make([]Variable, len(userAssets)*numOfAssetsFields)
 		for j := 0; j < len(userAssets); j++ {
 			// Equity
 			userEquity := userAssetsResults[i][j*5]
@@ -202,6 +204,13 @@ func (b BatchCreateUserCircuit) Define(api API) error {
 			userPortfolioMarginCollateral := userAssetsResults[i][j*5+4]
 			r.Check(userPortfolioMarginCollateral, 64)
 			
+			flattenAssetFieldsForHash[j*numOfAssetsFields] = userAssets[j].AssetIndex
+			flattenAssetFieldsForHash[j*numOfAssetsFields+1] = userEquity
+			flattenAssetFieldsForHash[j*numOfAssetsFields+2] = userDebt
+			flattenAssetFieldsForHash[j*numOfAssetsFields+3] = userVipLoanCollateral
+			flattenAssetFieldsForHash[j*numOfAssetsFields+4] = userMarginCollateral
+			flattenAssetFieldsForHash[j*numOfAssetsFields+5] = userPortfolioMarginCollateral
+
 			assetTotalCollateral := api.Add(userVipLoanCollateral, userMarginCollateral, userPortfolioMarginCollateral)
 			r.Check(assetTotalCollateral, 64)
 			api.AssertIsLessOrEqualNOp(assetTotalCollateral, userEquity, 64, true)
@@ -247,7 +256,7 @@ func (b BatchCreateUserCircuit) Define(api API) error {
 		r.Check(totalUserDebt, 128)
 		r.Check(totalUserCollateralRealValue, 128)
 		api.AssertIsLessOrEqualNOp(totalUserDebt, totalUserCollateralRealValue, 128, true)
-		userAssetsCommitment := computeUserAssetsCommitment(api, b.CreateUserOps[i].AssetsForUpdateCex)
+		userAssetsCommitment := computeUserAssetsCommitment(api, flattenAssetFieldsForHash)
 		accountHash := poseidon.Poseidon(api, b.CreateUserOps[i].AccountIdHash, totalUserEquity, totalUserDebt, totalUserCollateralRealValue, userAssetsCommitment)
 		actualAccountTreeRoot := updateMerkleProof(api, accountHash, b.CreateUserOps[i].AccountProof[:], accountIndexHelper)
 		api.AssertIsEqual(actualAccountTreeRoot, b.CreateUserOps[i].AfterAccountTreeRoot)
@@ -347,7 +356,7 @@ func SetBatchCreateUserCircuitWitness(batchWitness *utils.BatchCreateUserWitness
 	// Decide the assets count for user according to the first user,
 	// because the assets count for all users in a batch are the same
 	// and the rest of the users in the batch may be padding accounts
-	targetCounts := GetAssetsCountOfUser(batchWitness.CreateUserOps[0].Assets)
+	targetCounts := utils.GetNonEmptyAssetsCountOfUser(batchWitness.CreateUserOps[0].Assets)
 	for i := 0; i < len(witness.CreateUserOps); i++ {
 		witness.CreateUserOps[i].BeforeAccountTreeRoot = batchWitness.CreateUserOps[i].BeforeAccountTreeRoot
 		witness.CreateUserOps[i].AfterAccountTreeRoot = batchWitness.CreateUserOps[i].AfterAccountTreeRoot
@@ -366,7 +375,7 @@ func SetBatchCreateUserCircuitWitness(batchWitness *utils.BatchCreateUserWitness
 			
 			witness.CreateUserOps[i].AssetsForUpdateCex[j] = userAsset
 
-			if (!isAssetEmpty(&u)) {
+			if (!utils.IsAssetEmpty(&u)) {
 				existingKeys = append(existingKeys, int(u.Index))
 			}
 		}
@@ -403,7 +412,7 @@ func SetBatchCreateUserCircuitWitness(batchWitness *utils.BatchCreateUserWitness
 		}
 		for k := index; k < targetCounts; k++ {
 			witness.CreateUserOps[i].Assets[k] = UserAssetInfo{
-				AssetIndex: uint32(k),
+				AssetIndex: uint32(currentAssetIndex),
 				VipLoanCollateralIndex: 0,
 				VipLoanCollateralFlag: 0,
 				MarginCollateralIndex: 0,
@@ -411,6 +420,7 @@ func SetBatchCreateUserCircuitWitness(batchWitness *utils.BatchCreateUserWitness
 				PortfolioMarginCollateralIndex: 0,
 				PortfolioMarginCollateralFlag: 0,
 			}
+			currentAssetIndex += 1
 		}
 		witness.CreateUserOps[i].AccountIdHash = batchWitness.CreateUserOps[i].AccountIdHash
 		witness.CreateUserOps[i].AccountIndex = batchWitness.CreateUserOps[i].AccountIndex
@@ -421,26 +431,3 @@ func SetBatchCreateUserCircuitWitness(batchWitness *utils.BatchCreateUserWitness
 	return witness, nil
 }
 
-func isAssetEmpty(ua *utils.AccountAsset) bool {
-	if (ua.Debt == 0 && ua.Equity == 0 && ua.Margin == 0 && ua.PortfolioMargin == 0 && ua.VipLoan == 0) {
-		return true
-	}
-	return false
-}
-
-func GetAssetsCountOfUser(assets []utils.AccountAsset) int {
-	count := 0
-	targetCounts := 0
-	for _, v := range assets {
-		if (!isAssetEmpty(&v)) {
-			count += 1
-		}
-	}
-	for _, v := range utils.AssetCountsTiers {
-		if count <= v {
-			targetCounts = v
-			break
-		}
-	}
-	return targetCounts
-}

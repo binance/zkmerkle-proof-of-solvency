@@ -81,7 +81,7 @@ cd witness; go run main.go
 
 The `witness` service supports recovery from unexpected crash. After `witness` service finish running, we can see `witness` from `witness` table.
 
-One witness batch contains 460 users whose assets number is larger than 50, and 92 users whose assets number is less or equal than 50.
+One witness batch contains 700 users whose assets number is less or equal than 50, and 92 users whose assets number is larger than 50.
 
 ### Generate zk proof
 

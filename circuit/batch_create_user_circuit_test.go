@@ -28,7 +28,7 @@ import (
 
 func TestBatchCreateUserCircuit(t *testing.T) {
 	solver.RegisterHint(IntegerDivision)
-	targetAssetCounts := 30
+	targetAssetCounts := 50
 	totalAssetsCount := 500
 	userOpsPerBatch := 1
 	
@@ -334,20 +334,6 @@ func ConstructValidBatch(assetsCount int, totalAssetsCount int, userOpsPerBatch 
 	witnessForCircuit := utils.DecodeBatchWitness(witnessDataStr)
 	circuitWitness, _ := SetBatchCreateUserCircuitWitness(witnessForCircuit)
 	return circuitWitness
-}
-
-func TestEmptyAccountLeafNodeHash(t *testing.T) {
-	poseidonHasher := poseidon.NewPoseidon()
-	emptyAccountInfo := utils.AccountInfo{
-		AccountIndex: 0,
-		TotalEquity:  new(big.Int).SetInt64(0),
-		TotalDebt:    new(big.Int).SetInt64(0),
-		TotalCollateral: new(big.Int).SetInt64(0),
-		Assets:       make([]utils.AccountAsset, 0),
-	}
-
-	emptyAccountLeafNodeHash := utils.AccountInfoToHash(&emptyAccountInfo, &poseidonHasher)
-	fmt.Printf("empty account leaf node hash is %x\n", emptyAccountLeafNodeHash)
 }
 
 func TestSetBatchCreateUserCircuitWitness(t *testing.T) {

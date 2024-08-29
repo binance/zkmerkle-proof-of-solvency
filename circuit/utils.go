@@ -35,23 +35,21 @@ func accountIdToMerkleHelper(api API, accountId Variable) []Variable {
 	return merkleHelpers
 }
 
-func computeUserAssetsCommitment(api API, assets []UserAssetMeta) Variable {
-	nEles := (len(assets)*5 + 2) / 3
+func computeUserAssetsCommitment(api API, flattenAssets []Variable) Variable {
+	nEles := (len(flattenAssets) + 2) / 3
+	quotientEles := len(flattenAssets) / 3
+	remainderEles := len(flattenAssets) % 3
 	tmpUserAssets := make([]Variable, nEles)
-	flattenAssets := make([]Variable, nEles*3)
-	for i := 0; i < len(assets); i++ {
-		flattenAssets[5*i] = assets[i].Equity
-		flattenAssets[5*i+1] = assets[i].Debt
-		flattenAssets[5*i+2] = assets[i].VipLoanCollateral
-		flattenAssets[5*i+3] = assets[i].MarginCollateral
-		flattenAssets[5*i+4] = assets[i].PortfolioMarginCollateral
-	}
-	for i := len(assets) * 5; i < len(flattenAssets); i++ {
-		flattenAssets[i] = 0
-	}
-	for i := 0; i < len(tmpUserAssets); i++ {
+	for i := 0; i < quotientEles; i++ {
 		tmpUserAssets[i] = api.Add(api.Mul(flattenAssets[3*i], utils.Uint64MaxValueFrSquare),
 			api.Mul(flattenAssets[3*i+1], utils.Uint64MaxValueFr), flattenAssets[3*i+2])
+	}
+	var lastEle Variable = 0
+	for i := 0; i < remainderEles; i++ {
+		lastEle = api.Add(api.Mul(lastEle, utils.Uint64MaxValueFr), flattenAssets[3*quotientEles+i])
+	}
+	for i := remainderEles; i < 3; i++ {
+		lastEle = api.Mul(lastEle, utils.Uint64MaxValueFr)
 	}
 	commitment := poseidon.Poseidon(api, tmpUserAssets...)
 	return commitment

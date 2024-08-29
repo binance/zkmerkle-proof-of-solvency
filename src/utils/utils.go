@@ -106,30 +106,109 @@ func SelectAssetValue(expectAssetIndex int, flag int, currentAssetPosition int, 
 	}
 }
 
+func IsAssetEmpty(ua *AccountAsset) bool {
+	if (ua.Debt == 0 && ua.Equity == 0 && ua.Margin == 0 && ua.PortfolioMargin == 0 && ua.VipLoan == 0) {
+		return true
+	}
+	return false
+}
+
+func GetNonEmptyAssetsCountOfUser(assets []AccountAsset) int {
+	count := 0
+	targetCounts := 0
+	for _, v := range assets {
+		if (!IsAssetEmpty(&v)) {
+			count += 1
+		}
+	}
+	for _, v := range AssetCountsTiers {
+		if count <= v {
+			targetCounts = v
+			break
+		}
+	}
+	return targetCounts
+}
+
+func GetAssetsCountOfUser(assets []AccountAsset) int {
+	count := len(assets)
+	targetCounts := 0
+	for _, v := range AssetCountsTiers {
+		if count <= v {
+			targetCounts = v
+			break
+		}
+	}
+	return targetCounts
+}
+
+func PaddingAccountAssets(assets []AccountAsset) (paddingFlattenAssets []uint64) {
+	targetCounts := GetAssetsCountOfUser(assets)
+	if targetCounts < len(assets) {
+		fmt.Println("the target counts is ", targetCounts, " the length of assets is ", len(assets))
+		panic("the target counts is less than the length of assets")
+	}
+	numOfAssetsFields := 6
+	paddingFlattenAssets = make([]uint64, targetCounts * numOfAssetsFields)
+	paddingCounts := targetCounts - len(assets)
+	currentPaddingCounts := 0
+	currentAssetIndex := 0
+	index := 0
+	for i := 0; i < len(assets); i++ {
+		if currentPaddingCounts < paddingCounts {
+			for j := currentAssetIndex; j < int(assets[i].Index); j++ {
+				currentPaddingCounts += 1
+
+				paddingFlattenAssets[index*numOfAssetsFields] = uint64(j)
+				index += 1
+				if currentPaddingCounts >= paddingCounts {
+					break
+				}
+			}
+		}
+		paddingFlattenAssets[index*numOfAssetsFields] = uint64(assets[i].Index)
+		paddingFlattenAssets[index*numOfAssetsFields+1] = assets[i].Equity
+		paddingFlattenAssets[index*numOfAssetsFields+2] = assets[i].Debt
+		paddingFlattenAssets[index*numOfAssetsFields+3] = assets[i].VipLoan
+		paddingFlattenAssets[index*numOfAssetsFields+4] = assets[i].Margin
+		paddingFlattenAssets[index*numOfAssetsFields+5] = assets[i].PortfolioMargin
+		index += 1
+		currentAssetIndex = int(assets[i].Index) + 1
+	}
+	for i := index; i < targetCounts; i++ {
+		paddingFlattenAssets[i*numOfAssetsFields] = uint64(currentAssetIndex)
+		currentAssetIndex += 1
+	}
+
+	return paddingFlattenAssets
+}
+
 func ComputeUserAssetsCommitment(hasher *hash.Hash, assets []AccountAsset) []byte {
+	if len(assets) == 0 {
+		return new(big.Int).SetUint64(0).Bytes()
+	}
 	(*hasher).Reset()
-	nEles := (AssetCounts*5 + 2) / 3
-	currentAssetPosition := 0
+	paddingFlattenAssets := PaddingAccountAssets(assets)
+	targetCounts := GetAssetsCountOfUser(assets)
+	numOfAssetsFields := 6
+	numOfOneField := 3
+	nEles := (targetCounts*numOfAssetsFields + 2) / numOfOneField
+
+	aBigInt := new(big.Int).SetUint64(0)
+	bBigInt := new(big.Int).SetUint64(0)
+	cBigInt := new(big.Int).SetUint64(0)
 	for i := 0; i < nEles; i++ {
-		expectAssetIndex := (3 * i) / 5
-		flag := (3 * i) % 5
-		aBigInt, positionChange := SelectAssetValue(expectAssetIndex, flag, currentAssetPosition, assets)
-		if positionChange {
-			currentAssetPosition += 1
+		aBigInt.SetUint64(0)
+		if i*numOfOneField < len(paddingFlattenAssets) {
+			aBigInt.SetUint64(paddingFlattenAssets[i*numOfOneField])
 		}
-
-		expectAssetIndex = ((3 * i) + 1) / 5
-		flag = ((3 * i) + 1) % 5
-		bBigInt, positionChange := SelectAssetValue(expectAssetIndex, flag, currentAssetPosition, assets)
-		if positionChange {
-			currentAssetPosition += 1
+		bBigInt.SetUint64(0)
+		if i*numOfOneField+1 < len(paddingFlattenAssets) {
+			bBigInt.SetUint64(paddingFlattenAssets[i*numOfOneField+1])
 		}
-
-		expectAssetIndex = ((3 * i) + 2) / 5
-		flag = ((3 * i) + 2) % 5
-		cBigInt, positionChange := SelectAssetValue(expectAssetIndex, flag, currentAssetPosition, assets)
-		if positionChange {
-			currentAssetPosition += 1
+		cBigInt.SetUint64(0)
+		if i*numOfOneField+2 < len(paddingFlattenAssets) {
+			cBigInt.SetUint64(paddingFlattenAssets[i*numOfOneField+2])
 		}
 
 		sumBigIntBytes := new(big.Int).Add(new(big.Int).Add(
@@ -721,4 +800,32 @@ func ComputeCexAssetsCommitment(cexAssetsInfo []CexAssetInfo) []byte {
 		}
 	}
 	return hasher.Sum(nil)
+}
+
+func PaddingAccounts(accounts []AccountInfo, assetKey int, paddingStartIndex int) (int, []AccountInfo) {
+	opsPerBatch := BatchCreateUserOpsCountsTiers[assetKey]
+	batchCounts := (len(accounts) + opsPerBatch - 1) / opsPerBatch
+	paddingAccountCounts := batchCounts*opsPerBatch - len(accounts)
+	for i := 0; i < paddingAccountCounts; i++ {
+		assets := make([]AccountAsset, assetKey)
+		for j := 0; j < assetKey; j++ {
+			assets[j] = AccountAsset{
+				Index: uint16(j),
+				Equity: 0,
+				Debt: 0,
+				VipLoan: 0,
+				Margin: 0,
+				PortfolioMargin: 0,
+			}
+		}
+		accounts = append(accounts, AccountInfo{
+			AccountIndex: uint32(paddingStartIndex),
+			TotalEquity:   new(big.Int).SetInt64(0),
+			TotalDebt:     new(big.Int).SetInt64(0),
+			TotalCollateral: new(big.Int).SetInt64(0),
+			Assets:        assets,
+		})
+		paddingStartIndex += 1
+	}
+	return paddingStartIndex, accounts
 }

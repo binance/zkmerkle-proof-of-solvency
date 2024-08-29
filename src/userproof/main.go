@@ -50,7 +50,13 @@ func ComputeAccountRootHash(userProofConfig *config.Config) {
 		panic(err.Error())
 	}
 	startTime := time.Now().UnixMilli()
+	totalAccountCount := 0
+	for _, account := range accounts {
+		totalAccountCount += len(account)
+	}
+	paddingStartIndex := totalAccountCount
 	for key, account := range accounts {
+		paddingStartIndex, account = utils.PaddingAccounts(account, key, paddingStartIndex)
 		totalOpsNumber := len(account)
 		fmt.Println("the asset counts of user is ", key, "total ops number is ", totalOpsNumber)
 		chs := make(chan AccountLeave, 1000)
