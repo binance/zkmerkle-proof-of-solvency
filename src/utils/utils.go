@@ -184,9 +184,6 @@ func PaddingAccountAssets(assets []AccountAsset) (paddingFlattenAssets []uint64)
 }
 
 func ComputeUserAssetsCommitment(hasher *hash.Hash, assets []AccountAsset) []byte {
-	if len(assets) == 0 {
-		return new(big.Int).SetUint64(0).Bytes()
-	}
 	(*hasher).Reset()
 	paddingFlattenAssets := PaddingAccountAssets(assets)
 	targetCounts := GetAssetsCountOfUser(assets)

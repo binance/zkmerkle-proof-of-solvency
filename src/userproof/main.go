@@ -55,7 +55,13 @@ func ComputeAccountRootHash(userProofConfig *config.Config) {
 		totalAccountCount += len(account)
 	}
 	paddingStartIndex := totalAccountCount
-	for key, account := range accounts {
+	keys := make([]int, 0)
+	for k := range accounts {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
+	for _, key := range keys {
+		account := accounts[key]
 		paddingStartIndex, account = utils.PaddingAccounts(account, key, paddingStartIndex)
 		totalOpsNumber := len(account)
 		fmt.Println("the asset counts of user is ", key, "total ops number is ", totalOpsNumber)

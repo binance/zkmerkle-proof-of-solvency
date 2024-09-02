@@ -112,7 +112,7 @@ func (w *Witness) Run() {
 
 	poseidonHasher := poseidon.NewPoseidon()
 	go w.WriteBatchWitnessToDB()
-	for k, _ := range w.ops {
+	for k := range w.ops {
 		w.accountHashChan[k] = make([]chan []byte, utils.BatchCreateUserOpsCountsTiers[k])
 		for p := 0; p < utils.BatchCreateUserOpsCountsTiers[k]; p++ {
 			w.accountHashChan[k][p] = make(chan []byte, 1)
@@ -291,7 +291,7 @@ func (w *Witness) ExecuteBatchCreateUser(assetKey int, accountIndex uint32, curr
 func (w *Witness) GetBatchNumber() int {
 	b := 0
 	keys := make([]int, 0)
-	for k, _ := range w.ops {
+	for k := range w.ops {
 		keys = append(keys, k)
 	}
 	sort.Ints(keys)
@@ -306,9 +306,13 @@ func (w *Witness) GetBatchNumber() int {
 }
 
 func (w *Witness) PaddingAccounts() {
-
+	keys := make([]int, 0)
+	for k := range w.ops {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
 	paddingStartIndex := int(w.totalOpsNumber)
-	for k, v := range w.ops {
-		paddingStartIndex, w.ops[k] = utils.PaddingAccounts(v, k, paddingStartIndex)
+	for _, k := range keys {
+		paddingStartIndex, w.ops[k] = utils.PaddingAccounts(w.ops[k], k, paddingStartIndex)
 	}
 }
