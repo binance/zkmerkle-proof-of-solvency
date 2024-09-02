@@ -28,7 +28,7 @@ func ConvertTierRatiosToBytes(tiersRatio []TierRatio) [][]byte {
 	bBigInt := new(big.Int).SetUint64(0)
 	cBigInt := new(big.Int).SetUint64(0)
 	dBigInt := new(big.Int).SetUint64(0)
-	for i := 0; i < len(tiersRatio); i+=2 {
+	for i := 0; i < len(tiersRatio); i += 2 {
 		resBigInt.SetUint64(0)
 		aBigInt.SetUint64(uint64(tiersRatio[i].Ratio))
 		bBigInt.Set(tiersRatio[i].BoundaryValue)
@@ -62,7 +62,7 @@ func ConvertAssetInfoToBytes(value any) [][]byte {
 		res = append(res, resBigInt.Bytes())
 
 		resBigInt.SetUint64(0)
-		aBigInt.SetUint64(t.VipLoanCollateral)
+		aBigInt.SetUint64(t.LoanCollateral)
 		bBigInt.SetUint64(t.MarginCollateral)
 		cBigInt.SetUint64(t.PortfolioMarginCollateral)
 		aBigInt.Mul(aBigInt, Uint64MaxValueBigIntSquare)
@@ -73,7 +73,7 @@ func ConvertAssetInfoToBytes(value any) [][]byte {
 
 		// one tier ratio: boundaryValue take 118 bits, ratio take 8 bits = 126 bits
 		// so two tier ratio take 252 bits, can be stored in one circuit Variable
-		tempRes := ConvertTierRatiosToBytes(t.VipLoanRatios[:])
+		tempRes := ConvertTierRatiosToBytes(t.LoanRatios[:])
 		res = append(res, tempRes...)
 		tempRes = ConvertTierRatiosToBytes(t.MarginRatios[:])
 		res = append(res, tempRes...)
@@ -97,7 +97,7 @@ func SelectAssetValue(expectAssetIndex int, flag int, currentAssetPosition int, 
 		} else if flag == 1 {
 			return new(big.Int).SetUint64(assets[currentAssetPosition].Debt), false
 		} else if flag == 2 {
-			return new(big.Int).SetUint64(assets[currentAssetPosition].VipLoan), false
+			return new(big.Int).SetUint64(assets[currentAssetPosition].Loan), false
 		} else if flag == 3 {
 			return new(big.Int).SetUint64(assets[currentAssetPosition].Margin), false
 		} else {
@@ -107,7 +107,7 @@ func SelectAssetValue(expectAssetIndex int, flag int, currentAssetPosition int, 
 }
 
 func IsAssetEmpty(ua *AccountAsset) bool {
-	if (ua.Debt == 0 && ua.Equity == 0 && ua.Margin == 0 && ua.PortfolioMargin == 0 && ua.VipLoan == 0) {
+	if ua.Debt == 0 && ua.Equity == 0 && ua.Margin == 0 && ua.PortfolioMargin == 0 && ua.Loan == 0 {
 		return true
 	}
 	return false
@@ -117,7 +117,7 @@ func GetNonEmptyAssetsCountOfUser(assets []AccountAsset) int {
 	count := 0
 	targetCounts := 0
 	for _, v := range assets {
-		if (!IsAssetEmpty(&v)) {
+		if !IsAssetEmpty(&v) {
 			count += 1
 		}
 	}
@@ -149,7 +149,7 @@ func PaddingAccountAssets(assets []AccountAsset) (paddingFlattenAssets []uint64)
 		panic("the target counts is less than the length of assets")
 	}
 	numOfAssetsFields := 6
-	paddingFlattenAssets = make([]uint64, targetCounts * numOfAssetsFields)
+	paddingFlattenAssets = make([]uint64, targetCounts*numOfAssetsFields)
 	paddingCounts := targetCounts - len(assets)
 	currentPaddingCounts := 0
 	currentAssetIndex := 0
@@ -169,7 +169,7 @@ func PaddingAccountAssets(assets []AccountAsset) (paddingFlattenAssets []uint64)
 		paddingFlattenAssets[index*numOfAssetsFields] = uint64(assets[i].Index)
 		paddingFlattenAssets[index*numOfAssetsFields+1] = assets[i].Equity
 		paddingFlattenAssets[index*numOfAssetsFields+2] = assets[i].Debt
-		paddingFlattenAssets[index*numOfAssetsFields+3] = assets[i].VipLoan
+		paddingFlattenAssets[index*numOfAssetsFields+3] = assets[i].Loan
 		paddingFlattenAssets[index*numOfAssetsFields+4] = assets[i].Margin
 		paddingFlattenAssets[index*numOfAssetsFields+5] = assets[i].PortfolioMargin
 		index += 1
@@ -336,10 +336,10 @@ func ParseAssetIndexFromUserFile(userFilename string) ([]string, error) {
 		return nil, err
 	}
 	// 3: rn, id, total_net_balance
-	// 6: equity_assetA, debt_assetA, assetA, assetA_viploan, assetA_margin, assetA_portfolio_margin
+	// 6: equity_assetA, debt_assetA, assetA, assetA_loan, assetA_margin, assetA_portfolio_margin
 	assetCounts := (len(data) - 3) / 6
 	cexAssetsList := make([]string, assetCounts)
-	
+
 	for i := 0; i < assetCounts; i++ {
 		cexAssetsList[i] = strings.ToLower(data[i*6+4])
 	}
@@ -358,10 +358,10 @@ func PaddingTierRatios(tiersRatio []TierRatio) (res [TierCount]TierRatio) {
 			if len(tiersRatio) > 0 {
 				precomputedValue.Set(tiersRatio[len(tiersRatio)-1].PrecomputedValue)
 			}
-			
+
 			res[i] = TierRatio{
-				BoundaryValue: new(big.Int).Set(MaxTierBoundaryValue),
-				Ratio:         0,
+				BoundaryValue:    new(big.Int).Set(MaxTierBoundaryValue),
+				Ratio:            0,
 				PrecomputedValue: precomputedValue,
 			}
 		}
@@ -391,12 +391,12 @@ func ParseTiersRatioFromStr(tiersRatioEnc string) ([TierCount]TierRatio, error) 
 		if err != nil {
 			return PaddingTierRatios([]TierRatio{}), err
 		}
-		
+
 		ratio, err := ConvertFloatStrToUint64(tmpTierRatio[1], 1)
 		if err != nil {
 			return PaddingTierRatios([]TierRatio{}), err
 		}
-		
+
 		boundaryValueBigInt := new(big.Int).SetUint64(boundaryValue)
 		boundaryValueBigInt.Mul(boundaryValueBigInt, valueMultiplier)
 		lowBoundaryValueBigInt := new(big.Int).SetUint64(lowBoundaryValue)
@@ -449,7 +449,7 @@ func ParseCexAssetInfoFromFile(name string, assetIndexes []string) ([]CexAssetIn
 			fmt.Println("cex asset data wrong:", data[i])
 			return nil, errors.New("cex asset data wrong")
 		}
-		tmpCexAssetInfo := CexAssetInfo {
+		tmpCexAssetInfo := CexAssetInfo{
 			Symbol: strings.ToLower(data[i][0]),
 		}
 		multiplier := int64(100000000)
@@ -461,9 +461,9 @@ func ParseCexAssetInfoFromFile(name string, assetIndexes []string) ([]CexAssetIn
 			fmt.Println("asset data wrong:", data[i][0], err.Error())
 			return nil, err
 		}
-		tmpCexAssetInfo.VipLoanRatios, err = ParseTiersRatioFromStr(data[i][2])
+		tmpCexAssetInfo.LoanRatios, err = ParseTiersRatioFromStr(data[i][2])
 		if err != nil {
-			fmt.Println("parse viploan tiers ratio failed:", data[i][2], err.Error())
+			fmt.Println("parse loan tiers ratio failed:", data[i][2], err.Error())
 			return nil, err
 		}
 		tmpCexAssetInfo.MarginRatios, err = ParseTiersRatioFromStr(data[i][3])
@@ -476,10 +476,10 @@ func ParseCexAssetInfoFromFile(name string, assetIndexes []string) ([]CexAssetIn
 			fmt.Println("parse portfolio margin tiers ratio failed:", data[i][4], err.Error())
 			return nil, err
 		}
-		
+
 		cexAssets2Info[tmpCexAssetInfo.Symbol] = tmpCexAssetInfo
 	}
-	
+
 	cexAssetsInfo := make([]CexAssetInfo, AssetCounts)
 
 	if len(assetIndexes) != len(cexAssets2Info) {
@@ -491,13 +491,13 @@ func ParseCexAssetInfoFromFile(name string, assetIndexes []string) ([]CexAssetIn
 		cexAssetsInfo[i].Index = uint32(i)
 	}
 	for i := len(assetIndexes); i < AssetCounts; i++ {
-		cexAssetsInfo[i] = CexAssetInfo {
-			Symbol: "reserved",
-			BasePrice: 0,
-			VipLoanRatios: PaddingTierRatios([]TierRatio{}),
-			MarginRatios: PaddingTierRatios([]TierRatio{}),
+		cexAssetsInfo[i] = CexAssetInfo{
+			Symbol:                "reserved",
+			BasePrice:             0,
+			LoanRatios:            PaddingTierRatios([]TierRatio{}),
+			MarginRatios:          PaddingTierRatios([]TierRatio{}),
 			PortfolioMarginRatios: PaddingTierRatios([]TierRatio{}),
-			Index: uint32(i),
+			Index:                 uint32(i),
 		}
 	}
 	return cexAssetsInfo, nil
@@ -518,8 +518,8 @@ func ReadUserDataFromCsvFile(name string, cexAssetsInfo []CexAssetInfo) (map[int
 	accountIndex := 0
 	accounts := make(map[int][]AccountInfo)
 	// rn, id,
-	// equity_assetA, debt_assetA, assetA, assetA_viploan, assetA_margin, assetA_portfolio_margin,
-	// equity_assetB, debt_assetB, assetB, assetB_viploan, assetB_margin, assetA_portfolio_margin,
+	// equity_assetA, debt_assetA, assetA, assetA_loan, assetA_margin, assetA_portfolio_margin,
+	// equity_assetB, debt_assetB, assetB, assetB_loan, assetB_margin, assetA_portfolio_margin,
 	// ......
 	assetCounts := (len(data[0]) - 3) / 6
 	data = data[1:]
@@ -561,11 +561,11 @@ func ReadUserDataFromCsvFile(name string, cexAssetsInfo []CexAssetInfo) (map[int
 				invalidAccountFlag = true
 				break
 			}
-			
-			viploan, err := ConvertFloatStrToUint64(data[i][j*6+5], multiplier)
+
+			loan, err := ConvertFloatStrToUint64(data[i][j*6+5], multiplier)
 			if err != nil {
-				fmt.Println("the viploan symbol is ", cexAssetsInfo[j].Symbol)
-				fmt.Println("account", data[i][1], "viploan data wrong:", err.Error())
+				fmt.Println("the loan symbol is ", cexAssetsInfo[j].Symbol)
+				fmt.Println("account", data[i][1], "loan data wrong:", err.Error())
 				invalidCounts += 1
 				invalidAccountFlag = true
 				break
@@ -593,11 +593,11 @@ func ReadUserDataFromCsvFile(name string, cexAssetsInfo []CexAssetInfo) (map[int
 				tmpAsset.Index = uint16(j)
 				tmpAsset.Equity = equity
 				tmpAsset.Debt = debt
-				tmpAsset.VipLoan = viploan
+				tmpAsset.Loan = loan
 				tmpAsset.Margin = margin
 				tmpAsset.PortfolioMargin = portfolioMargin
 				assets = append(assets, tmpAsset)
-				assetTotalCollateral := SafeAdd(tmpAsset.VipLoan, tmpAsset.Margin)
+				assetTotalCollateral := SafeAdd(tmpAsset.Loan, tmpAsset.Margin)
 				assetTotalCollateral = SafeAdd(assetTotalCollateral, tmpAsset.PortfolioMargin)
 				if assetTotalCollateral > tmpAsset.Equity {
 					fmt.Println("account", data[i][1], "data wrong: total collateral is bigger than equity")
@@ -610,9 +610,9 @@ func ReadUserDataFromCsvFile(name string, cexAssetsInfo []CexAssetInfo) (map[int
 					new(big.Int).Mul(new(big.Int).SetUint64(tmpAsset.Equity), new(big.Int).SetUint64(cexAssetsInfo[j].BasePrice)))
 				account.TotalDebt = account.TotalDebt.Add(account.TotalDebt,
 					new(big.Int).Mul(new(big.Int).SetUint64(tmpAsset.Debt), new(big.Int).SetUint64(cexAssetsInfo[j].BasePrice)))
-				
-				account.TotalCollateral = account.TotalCollateral.Add(account.TotalCollateral, 
-					CalculateAssetValueForCollateral(viploan, margin, portfolioMargin, &cexAssetsInfo[j]))
+
+				account.TotalCollateral = account.TotalCollateral.Add(account.TotalCollateral,
+					CalculateAssetValueForCollateral(loan, margin, portfolioMargin, &cexAssetsInfo[j]))
 			}
 		}
 
@@ -640,30 +640,27 @@ func ReadUserDataFromCsvFile(name string, cexAssetsInfo []CexAssetInfo) (map[int
 	}
 	fmt.Println("The invalid accounts number is ", invalidCounts)
 	validAccountNum := 0
-	for _,v := range accounts {
+	for _, v := range accounts {
 		validAccountNum += len(v)
 	}
 	fmt.Println("The valid accounts number is ", validAccountNum)
 	return accounts, nil
 }
 
-func CalculateAssetValueForCollateral(viploan uint64, margin uint64, portfolioMargin uint64, cexAssetInfo *CexAssetInfo) *big.Int {
+func CalculateAssetValueForCollateral(loan uint64, margin uint64, portfolioMargin uint64, cexAssetInfo *CexAssetInfo) *big.Int {
 	assetPrice := new(big.Int).SetUint64(cexAssetInfo.BasePrice)
-	viploanValue := new(big.Int).SetUint64(viploan)
-	viploanValue.Mul(viploanValue, assetPrice)
-	viploanValue = CalculateAssetValueViaTiersRatio(viploanValue, cexAssetInfo.VipLoanRatios[:])
-	
+	loanValue := new(big.Int).SetUint64(loan)
+	loanValue.Mul(loanValue, assetPrice)
+	loanValue = CalculateAssetValueViaTiersRatio(loanValue, cexAssetInfo.LoanRatios[:])
+
 	marginValue := new(big.Int).SetUint64(margin)
 	marginValue.Mul(marginValue, assetPrice)
 	marginValue = CalculateAssetValueViaTiersRatio(marginValue, cexAssetInfo.MarginRatios[:])
-	
+
 	portfolioMarginValue := new(big.Int).SetUint64(portfolioMargin)
 	portfolioMarginValue.Mul(portfolioMarginValue, assetPrice)
 	portfolioMarginValue = CalculateAssetValueViaTiersRatio(portfolioMarginValue, cexAssetInfo.PortfolioMarginRatios[:])
-	// fmt.Println("viploanValue", viploanValue.String())
-	// fmt.Println("marginValue", marginValue.String())
-	// fmt.Println("portfolioMarginValue", portfolioMarginValue.String())
-	return viploanValue.Add(viploanValue, marginValue).Add(viploanValue, portfolioMarginValue)
+	return loanValue.Add(loanValue, marginValue).Add(loanValue, portfolioMarginValue)
 }
 
 func CalculateAssetValueViaTiersRatio(collateralValue *big.Int, tiersRatio []TierRatio) *big.Int {
@@ -724,11 +721,11 @@ func DecodeBatchWitness(data string) *BatchCreateUserWitness {
 		userAssets := make([]AccountAsset, AssetCounts)
 		for p := 0; p < AssetCounts; p++ {
 			userAssets[p] = AccountAsset{
-				Index: uint16(p),
-				Equity: 0,
-				Debt: 0,
-				VipLoan: 0,
-				Margin: 0,
+				Index:           uint16(p),
+				Equity:          0,
+				Debt:            0,
+				Loan:            0,
+				Margin:          0,
 				PortfolioMargin: 0,
 			}
 		}
@@ -756,7 +753,7 @@ func RecoverAfterCexAssets(witness *BatchCreateUserWitness) []CexAssetInfo {
 			asset := &witness.CreateUserOps[i].Assets[j]
 			cexAssets[asset.Index].TotalEquity = SafeAdd(cexAssets[asset.Index].TotalEquity, asset.Equity)
 			cexAssets[asset.Index].TotalDebt = SafeAdd(cexAssets[asset.Index].TotalDebt, asset.Debt)
-			cexAssets[asset.Index].VipLoanCollateral = SafeAdd(cexAssets[asset.Index].VipLoanCollateral, asset.VipLoan)
+			cexAssets[asset.Index].LoanCollateral = SafeAdd(cexAssets[asset.Index].LoanCollateral, asset.Loan)
 			cexAssets[asset.Index].MarginCollateral = SafeAdd(cexAssets[asset.Index].MarginCollateral, asset.Margin)
 			cexAssets[asset.Index].PortfolioMarginCollateral = SafeAdd(cexAssets[asset.Index].PortfolioMarginCollateral, asset.PortfolioMargin)
 		}
@@ -780,13 +777,13 @@ func ComputeCexAssetsCommitment(cexAssetsInfo []CexAssetInfo) []byte {
 	hasher := poseidon.NewPoseidon()
 	emptyCexAssets := make([]CexAssetInfo, AssetCounts-len(cexAssetsInfo))
 	for i := len(cexAssetsInfo); i < AssetCounts; i++ {
-		emptyCexAssets[i-len(cexAssetsInfo)] = CexAssetInfo {
-			Symbol: "reserved",
-			BasePrice: 0,
-			VipLoanRatios: PaddingTierRatios([]TierRatio{}),
-			MarginRatios: PaddingTierRatios([]TierRatio{}),
+		emptyCexAssets[i-len(cexAssetsInfo)] = CexAssetInfo{
+			Symbol:                "reserved",
+			BasePrice:             0,
+			LoanRatios:            PaddingTierRatios([]TierRatio{}),
+			MarginRatios:          PaddingTierRatios([]TierRatio{}),
 			PortfolioMarginRatios: PaddingTierRatios([]TierRatio{}),
-			Index: uint32(i),
+			Index:                 uint32(i),
 		}
 	}
 	cexAssetsInfo = append(cexAssetsInfo, emptyCexAssets...)
@@ -807,20 +804,20 @@ func PaddingAccounts(accounts []AccountInfo, assetKey int, paddingStartIndex int
 		assets := make([]AccountAsset, assetKey)
 		for j := 0; j < assetKey; j++ {
 			assets[j] = AccountAsset{
-				Index: uint16(j),
-				Equity: 0,
-				Debt: 0,
-				VipLoan: 0,
-				Margin: 0,
+				Index:           uint16(j),
+				Equity:          0,
+				Debt:            0,
+				Loan:            0,
+				Margin:          0,
 				PortfolioMargin: 0,
 			}
 		}
 		accounts = append(accounts, AccountInfo{
-			AccountIndex: uint32(paddingStartIndex),
-			TotalEquity:   new(big.Int).SetInt64(0),
-			TotalDebt:     new(big.Int).SetInt64(0),
+			AccountIndex:    uint32(paddingStartIndex),
+			TotalEquity:     new(big.Int).SetInt64(0),
+			TotalDebt:       new(big.Int).SetInt64(0),
 			TotalCollateral: new(big.Int).SetInt64(0),
-			Assets:        assets,
+			Assets:          assets,
 		})
 		paddingStartIndex += 1
 	}

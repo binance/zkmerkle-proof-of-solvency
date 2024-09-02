@@ -5,65 +5,63 @@ import (
 	"testing"
 	"time"
 
+	"math/big"
+
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/groth16"
+	"github.com/consensys/gnark/constraint/solver"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
 	"github.com/consensys/gnark/std/lookup/logderivlookup"
 	"github.com/consensys/gnark/std/rangecheck"
-	"github.com/consensys/gnark/constraint/solver"
-	"math/big"
 )
 
 type MockCollateralCircuit struct {
-	
-	UAssetInfo                  []UserAssetInfo
-	UAssetMataInfo              []UserAssetMeta
-	AssetId                     []int
+	UAssetInfo     []UserAssetInfo
+	UAssetMataInfo []UserAssetMeta
+	AssetId        []int
 
-	CAssetInfo 				 	[]CexAssetInfo
+	CAssetInfo []CexAssetInfo
 
-	ExpectedVipLoanCollateral   []Variable
-	ExpectedMarginCollateral    []Variable
+	ExpectedLoanCollateral            []Variable
+	ExpectedMarginCollateral          []Variable
 	ExpectedPortfolioMarginCollateral []Variable
-
 }
 
 func (circuit MockCollateralCircuit) Define(api API) error {
 	r := rangecheck.New(api)
 	for i := 0; i < len(circuit.CAssetInfo); i++ {
-		generateRapidArithmeticForCollateral(api, r, circuit.CAssetInfo[i].VipLoanRatios)
+		generateRapidArithmeticForCollateral(api, r, circuit.CAssetInfo[i].LoanRatios)
 		generateRapidArithmeticForCollateral(api, r, circuit.CAssetInfo[i].MarginRatios)
 		generateRapidArithmeticForCollateral(api, r, circuit.CAssetInfo[i].PortfolioMarginRatios)
 	}
-	t0 :=constructViploanTierRatiosLookupTable(api, circuit.CAssetInfo)
-	t1 :=constructMarginTierRatiosLookupTable(api, circuit.CAssetInfo)
-	t2 :=constructPortfolioTierRatiosLookupTable(api, circuit.CAssetInfo)
+	t0 := constructLoanTierRatiosLookupTable(api, circuit.CAssetInfo)
+	t1 := constructMarginTierRatiosLookupTable(api, circuit.CAssetInfo)
+	t2 := constructPortfolioTierRatiosLookupTable(api, circuit.CAssetInfo)
 
 	for i := 0; i < len(circuit.UAssetInfo); i++ {
-		realViploanCollateralValue := getAndCheckTierRatiosQueryResults(api, r, t0, circuit.UAssetInfo[i].AssetIndex, 
-											circuit.UAssetMataInfo[i].VipLoanCollateral,
-											circuit.UAssetInfo[i].VipLoanCollateralIndex,
-											circuit.UAssetInfo[i].VipLoanCollateralFlag,
-											circuit.CAssetInfo[circuit.AssetId[i]].BasePrice, 
-											3*(len(circuit.CAssetInfo[circuit.AssetId[i]].VipLoanRatios)+1))
-
+		realLoanCollateralValue := getAndCheckTierRatiosQueryResults(api, r, t0, circuit.UAssetInfo[i].AssetIndex,
+			circuit.UAssetMataInfo[i].LoanCollateral,
+			circuit.UAssetInfo[i].LoanCollateralIndex,
+			circuit.UAssetInfo[i].LoanCollateralFlag,
+			circuit.CAssetInfo[circuit.AssetId[i]].BasePrice,
+			3*(len(circuit.CAssetInfo[circuit.AssetId[i]].LoanRatios)+1))
 
 		realMarginCollateralValue := getAndCheckTierRatiosQueryResults(api, r, t1, circuit.UAssetInfo[i].AssetIndex,
-											circuit.UAssetMataInfo[i].MarginCollateral,
-											circuit.UAssetInfo[i].MarginCollateralIndex,
-											circuit.UAssetInfo[i].MarginCollateralFlag,
-											circuit.CAssetInfo[circuit.AssetId[i]].BasePrice,
-											3*(len(circuit.CAssetInfo[circuit.AssetId[i]].MarginRatios)+1))
-		
-		realPortfolioMarginCollateralValue := getAndCheckTierRatiosQueryResults(api, r, t2, circuit.UAssetInfo[i].AssetIndex,
-											circuit.UAssetMataInfo[i].PortfolioMarginCollateral,
-											circuit.UAssetInfo[i].PortfolioMarginCollateralIndex,
-											circuit.UAssetInfo[i].PortfolioMarginCollateralFlag,
-											circuit.CAssetInfo[circuit.AssetId[i]].BasePrice,
-											3*(len(circuit.CAssetInfo[circuit.AssetId[i]].PortfolioMarginRatios)+1))
+			circuit.UAssetMataInfo[i].MarginCollateral,
+			circuit.UAssetInfo[i].MarginCollateralIndex,
+			circuit.UAssetInfo[i].MarginCollateralFlag,
+			circuit.CAssetInfo[circuit.AssetId[i]].BasePrice,
+			3*(len(circuit.CAssetInfo[circuit.AssetId[i]].MarginRatios)+1))
 
-		api.AssertIsEqual(circuit.ExpectedVipLoanCollateral[i], realViploanCollateralValue)
+		realPortfolioMarginCollateralValue := getAndCheckTierRatiosQueryResults(api, r, t2, circuit.UAssetInfo[i].AssetIndex,
+			circuit.UAssetMataInfo[i].PortfolioMarginCollateral,
+			circuit.UAssetInfo[i].PortfolioMarginCollateralIndex,
+			circuit.UAssetInfo[i].PortfolioMarginCollateralFlag,
+			circuit.CAssetInfo[circuit.AssetId[i]].BasePrice,
+			3*(len(circuit.CAssetInfo[circuit.AssetId[i]].PortfolioMarginRatios)+1))
+
+		api.AssertIsEqual(circuit.ExpectedLoanCollateral[i], realLoanCollateralValue)
 		api.AssertIsEqual(circuit.ExpectedMarginCollateral[i], realMarginCollateralValue)
 		api.AssertIsEqual(circuit.ExpectedPortfolioMarginCollateral[i], realPortfolioMarginCollateralValue)
 	}
@@ -74,14 +72,14 @@ func TestMockCollateralCircuit(t *testing.T) {
 	var circuit MockCollateralCircuit
 	circuit.CAssetInfo = make([]CexAssetInfo, 5)
 	for i := 0; i < len(circuit.CAssetInfo); i++ {
-		circuit.CAssetInfo[i].VipLoanRatios = make([]TierRatio, 10)
+		circuit.CAssetInfo[i].LoanRatios = make([]TierRatio, 10)
 		circuit.CAssetInfo[i].MarginRatios = make([]TierRatio, 10)
 		circuit.CAssetInfo[i].PortfolioMarginRatios = make([]TierRatio, 10)
 	}
 	circuit.AssetId = make([]int, 2)
 	circuit.UAssetInfo = make([]UserAssetInfo, 2)
 	circuit.UAssetMataInfo = make([]UserAssetMeta, 2)
-	circuit.ExpectedVipLoanCollateral = make([]Variable, 2)
+	circuit.ExpectedLoanCollateral = make([]Variable, 2)
 	circuit.ExpectedMarginCollateral = make([]Variable, 2)
 	circuit.ExpectedPortfolioMarginCollateral = make([]Variable, 2)
 
@@ -92,28 +90,28 @@ func TestMockCollateralCircuit(t *testing.T) {
 		t.Fatal(err)
 	}
 	fmt.Println("constraints number is ", oR1cs.GetNbConstraints())
-	
+
 	var circuit2 MockCollateralCircuit
 	circuit2.CAssetInfo = make([]CexAssetInfo, 5)
 	for i := 0; i < len(circuit2.CAssetInfo); i++ {
 		circuit2.CAssetInfo[i].TotalEquity = 0
 		circuit2.CAssetInfo[i].TotalDebt = 0
 		circuit2.CAssetInfo[i].BasePrice = 1
-		circuit2.CAssetInfo[i].VipLoanCollateral = 0
+		circuit2.CAssetInfo[i].LoanCollateral = 0
 		circuit2.CAssetInfo[i].MarginCollateral = 0
 		circuit2.CAssetInfo[i].PortfolioMarginCollateral = 0
 
-		circuit2.CAssetInfo[i].VipLoanRatios = make([]TierRatio, 10)
+		circuit2.CAssetInfo[i].LoanRatios = make([]TierRatio, 10)
 		for j := 0; j < 10; j++ {
-			circuit2.CAssetInfo[i].VipLoanRatios[j].BoundaryValue = 10000*(j+1)
+			circuit2.CAssetInfo[i].LoanRatios[j].BoundaryValue = 10000 * (j + 1)
 			ratio := 100 - j*10
-			circuit2.CAssetInfo[i].VipLoanRatios[j].Ratio = ratio
-			circuit2.CAssetInfo[i].VipLoanRatios[j].PrecomputedValue = 0
+			circuit2.CAssetInfo[i].LoanRatios[j].Ratio = ratio
+			circuit2.CAssetInfo[i].LoanRatios[j].PrecomputedValue = 0
 		}
 
 		circuit2.CAssetInfo[i].MarginRatios = make([]TierRatio, 10)
 		for j := 0; j < 10; j++ {
-			circuit2.CAssetInfo[i].MarginRatios[j].BoundaryValue = 20001*(j+1)
+			circuit2.CAssetInfo[i].MarginRatios[j].BoundaryValue = 20001 * (j + 1)
 			ratio := 100 - j*9
 			circuit2.CAssetInfo[i].MarginRatios[j].Ratio = ratio
 			circuit2.CAssetInfo[i].MarginRatios[j].PrecomputedValue = 0
@@ -121,29 +119,28 @@ func TestMockCollateralCircuit(t *testing.T) {
 
 		circuit2.CAssetInfo[i].PortfolioMarginRatios = make([]TierRatio, 10)
 		for j := 0; j < 10; j++ {
-			circuit2.CAssetInfo[i].PortfolioMarginRatios[j].BoundaryValue = 30000*(j+1)
+			circuit2.CAssetInfo[i].PortfolioMarginRatios[j].BoundaryValue = 30000 * (j + 1)
 			ratio := 100 - j*8
 			circuit2.CAssetInfo[i].PortfolioMarginRatios[j].Ratio = ratio
 			circuit2.CAssetInfo[i].PortfolioMarginRatios[j].PrecomputedValue = 0
 		}
 	}
 
-
 	circuit2.AssetId = []int{0, 1}
 	circuit2.UAssetInfo = make([]UserAssetInfo, 2)
 	circuit2.UAssetMataInfo = make([]UserAssetMeta, 2)
 	circuit2.ExpectedMarginCollateral = make([]Variable, 2)
-	circuit2.ExpectedVipLoanCollateral = make([]Variable, 2)
+	circuit2.ExpectedLoanCollateral = make([]Variable, 2)
 	circuit2.ExpectedPortfolioMarginCollateral = make([]Variable, 2)
 
 	circuit2.UAssetMataInfo[0].Equity = 0
 	circuit2.UAssetMataInfo[0].Debt = 0
-	circuit2.UAssetMataInfo[0].VipLoanCollateral = 9000
+	circuit2.UAssetMataInfo[0].LoanCollateral = 9000
 	circuit2.UAssetInfo[0].AssetIndex = 0
-	circuit2.UAssetInfo[0].VipLoanCollateralIndex = 0
-	circuit2.UAssetInfo[0].VipLoanCollateralFlag = 0
-	circuit2.ExpectedVipLoanCollateral[0] = 9000
-	
+	circuit2.UAssetInfo[0].LoanCollateralIndex = 0
+	circuit2.UAssetInfo[0].LoanCollateralFlag = 0
+	circuit2.ExpectedLoanCollateral[0] = 9000
+
 	circuit2.UAssetMataInfo[0].MarginCollateral = 39000
 	circuit2.UAssetInfo[0].MarginCollateralIndex = 1
 	circuit2.UAssetInfo[0].MarginCollateralFlag = 0
@@ -156,12 +153,12 @@ func TestMockCollateralCircuit(t *testing.T) {
 
 	circuit2.UAssetMataInfo[1].Equity = 0
 	circuit2.UAssetMataInfo[1].Debt = 0
-	circuit2.UAssetMataInfo[1].VipLoanCollateral = 100001
+	circuit2.UAssetMataInfo[1].LoanCollateral = 100001
 	circuit2.UAssetInfo[1].AssetIndex = 1
-	circuit2.UAssetInfo[1].VipLoanCollateralIndex = 9
-	circuit2.UAssetInfo[1].VipLoanCollateralFlag = 1
-	circuit2.ExpectedVipLoanCollateral[1] = 55000
-	
+	circuit2.UAssetInfo[1].LoanCollateralIndex = 9
+	circuit2.UAssetInfo[1].LoanCollateralFlag = 1
+	circuit2.ExpectedLoanCollateral[1] = 55000
+
 	circuit2.UAssetMataInfo[1].MarginCollateral = 10000
 	circuit2.UAssetInfo[1].MarginCollateralIndex = 0
 	circuit2.UAssetInfo[1].MarginCollateralFlag = 0
@@ -171,7 +168,6 @@ func TestMockCollateralCircuit(t *testing.T) {
 	circuit2.UAssetInfo[1].PortfolioMarginCollateralIndex = 6
 	circuit2.UAssetInfo[1].PortfolioMarginCollateralFlag = 0
 	circuit2.ExpectedPortfolioMarginCollateral[1] = 154400
-
 
 	witness, err := frontend.NewWitness(&circuit2, ecc.BN254.ScalarField())
 	if err != nil {
@@ -212,26 +208,23 @@ func TestMockCollateralCircuit(t *testing.T) {
 }
 
 type MockCexAssetInfo struct {
-	
-	VipLoanRatios               []Variable
-	MarginRatios                []Variable
-	PortfolioMarginRatios	    []Variable
-} 
+	LoanRatios            []Variable
+	MarginRatios          []Variable
+	PortfolioMarginRatios []Variable
+}
 
 type MockUserAssetInfo struct {
-	
-	VipLoanCollateral     		      Variable
-	VipLoanCollateralIndex	 	      Variable
-	MarginCollateral      		      Variable
-	MarginCollateralIndex	 	      Variable
-	PortfolioMarginCollateral         Variable
-	PortfolioMarginCollateralIndex    Variable
-
+	LoanCollateral                 Variable
+	LoanCollateralIndex            Variable
+	MarginCollateral               Variable
+	MarginCollateralIndex          Variable
+	PortfolioMarginCollateral      Variable
+	PortfolioMarginCollateralIndex Variable
 }
 
 type MockUserCircuit struct {
-	Assets              []MockUserAssetInfo
-	CexAssets           []MockCexAssetInfo
+	Assets    []MockUserAssetInfo
+	CexAssets []MockCexAssetInfo
 }
 
 func (circuit MockUserCircuit) Define(api API) error {
@@ -240,8 +233,8 @@ func (circuit MockUserCircuit) Define(api API) error {
 	t1 := logderivlookup.New(api)
 	t2 := logderivlookup.New(api)
 	for i := range circuit.CexAssets {
-		for j := range circuit.CexAssets[i].VipLoanRatios {
-			t0.Insert(circuit.CexAssets[i].VipLoanRatios[j])
+		for j := range circuit.CexAssets[i].LoanRatios {
+			t0.Insert(circuit.CexAssets[i].LoanRatios[j])
 		}
 		for j := range circuit.CexAssets[i].MarginRatios {
 			t1.Insert(circuit.CexAssets[i].MarginRatios[j])
@@ -251,14 +244,14 @@ func (circuit MockUserCircuit) Define(api API) error {
 		}
 	}
 
-	q0 := make([]Variable, 3 * len(circuit.Assets))
-	q1 := make([]Variable, 3 * len(circuit.Assets))
-	q2 := make([]Variable, 3 * len(circuit.Assets))
+	q0 := make([]Variable, 3*len(circuit.Assets))
+	q1 := make([]Variable, 3*len(circuit.Assets))
+	q2 := make([]Variable, 3*len(circuit.Assets))
 
 	for i := range circuit.Assets {
-		q0[3*i] = api.Add(api.Mul(circuit.Assets[i].VipLoanCollateralIndex, 3), 30*i)
-		q0[3*i+1] = api.Add(api.Mul(circuit.Assets[i].VipLoanCollateralIndex, 3), 30*i+1)
-		q0[3*i+2] = api.Add(api.Mul(circuit.Assets[i].VipLoanCollateralIndex, 3), 30*i+2)
+		q0[3*i] = api.Add(api.Mul(circuit.Assets[i].LoanCollateralIndex, 3), 30*i)
+		q0[3*i+1] = api.Add(api.Mul(circuit.Assets[i].LoanCollateralIndex, 3), 30*i+1)
+		q0[3*i+2] = api.Add(api.Mul(circuit.Assets[i].LoanCollateralIndex, 3), 30*i+2)
 
 		q1[3*i] = api.Add(api.Mul(circuit.Assets[i].MarginCollateralIndex, 3), 30*i)
 		q1[3*i+1] = api.Add(api.Mul(circuit.Assets[i].MarginCollateralIndex, 3), 30*i+1)
@@ -275,24 +268,24 @@ func (circuit MockUserCircuit) Define(api API) error {
 
 	for i := range circuit.Assets {
 		// BoundaryValue
-		api.AssertIsLessOrEqualNOp(circuit.Assets[i].VipLoanCollateral, r0[3*i], 128, true)
-		api.AssertIsLessOrEqualNOp(circuit.Assets[i].VipLoanCollateral, r0[3*i], 128, true)
+		api.AssertIsLessOrEqualNOp(circuit.Assets[i].LoanCollateral, r0[3*i], 128, true)
+		api.AssertIsLessOrEqualNOp(circuit.Assets[i].LoanCollateral, r0[3*i], 128, true)
 		api.AssertIsLessOrEqualNOp(circuit.Assets[i].MarginCollateral, r1[3*i], 128, true)
 		api.AssertIsLessOrEqualNOp(circuit.Assets[i].MarginCollateral, r1[3*i], 128, true)
 		api.AssertIsLessOrEqualNOp(circuit.Assets[i].PortfolioMarginCollateral, r2[3*i], 128, true)
 		api.AssertIsLessOrEqualNOp(circuit.Assets[i].PortfolioMarginCollateral, r2[3*i], 128, true)
 	}
-	
+
 	return nil
 }
 
 func TestMockUserCircuit(t *testing.T) {
-	
+
 	var circuit MockUserCircuit
 	circuit.Assets = make([]MockUserAssetInfo, 350)
 	circuit.CexAssets = make([]MockCexAssetInfo, 350)
 	for i := 0; i < 350; i++ {
-		circuit.CexAssets[i].VipLoanRatios = make([]Variable, 30)
+		circuit.CexAssets[i].LoanRatios = make([]Variable, 30)
 		circuit.CexAssets[i].MarginRatios = make([]Variable, 30)
 		circuit.CexAssets[i].PortfolioMarginRatios = make([]Variable, 30)
 	}
@@ -303,35 +296,34 @@ func TestMockUserCircuit(t *testing.T) {
 	}
 	fmt.Println("constraints number is ", oR1cs.GetNbConstraints())
 
-
 	var circuit2 MockUserCircuit
 	circuit2.CexAssets = make([]MockCexAssetInfo, 350)
 	for i := 0; i < 350; i++ {
-		circuit2.CexAssets[i].VipLoanRatios = make([]Variable, 30)
+		circuit2.CexAssets[i].LoanRatios = make([]Variable, 30)
 		for j := 0; j < 10; j++ {
-			circuit2.CexAssets[i].VipLoanRatios[3*j] = 100*(j+1)
-			circuit2.CexAssets[i].VipLoanRatios[3*j+1] = 100*(j+1)
-			circuit2.CexAssets[i].VipLoanRatios[3*j+2] = 100*(j+1)
+			circuit2.CexAssets[i].LoanRatios[3*j] = 100 * (j + 1)
+			circuit2.CexAssets[i].LoanRatios[3*j+1] = 100 * (j + 1)
+			circuit2.CexAssets[i].LoanRatios[3*j+2] = 100 * (j + 1)
 		}
 		circuit2.CexAssets[i].MarginRatios = make([]Variable, 30)
 		for j := 0; j < 10; j++ {
-			circuit2.CexAssets[i].MarginRatios[3*j] = 100*(j+1)
-			circuit2.CexAssets[i].MarginRatios[3*j+1] = 100*(j+1)
-			circuit2.CexAssets[i].MarginRatios[3*j+2] = 100*(j+1)
+			circuit2.CexAssets[i].MarginRatios[3*j] = 100 * (j + 1)
+			circuit2.CexAssets[i].MarginRatios[3*j+1] = 100 * (j + 1)
+			circuit2.CexAssets[i].MarginRatios[3*j+2] = 100 * (j + 1)
 		}
 		circuit2.CexAssets[i].PortfolioMarginRatios = make([]Variable, 30)
 		for j := 0; j < 10; j++ {
-			circuit2.CexAssets[i].PortfolioMarginRatios[3*j] = 100*(j+1)
-			circuit2.CexAssets[i].PortfolioMarginRatios[3*j+1] = 100*(j+1)
-			circuit2.CexAssets[i].PortfolioMarginRatios[3*j+2] = 100*(j+1)
+			circuit2.CexAssets[i].PortfolioMarginRatios[3*j] = 100 * (j + 1)
+			circuit2.CexAssets[i].PortfolioMarginRatios[3*j+1] = 100 * (j + 1)
+			circuit2.CexAssets[i].PortfolioMarginRatios[3*j+2] = 100 * (j + 1)
 		}
 	}
 	circuit2.Assets = make([]MockUserAssetInfo, 350)
 	for i := 0; i < 350; i++ {
-		circuit2.Assets[i].VipLoanCollateralIndex = 1
+		circuit2.Assets[i].LoanCollateralIndex = 1
 		circuit2.Assets[i].MarginCollateralIndex = 1
 		circuit2.Assets[i].PortfolioMarginCollateralIndex = 1
-		circuit2.Assets[i].VipLoanCollateral = 199
+		circuit2.Assets[i].LoanCollateral = 199
 		circuit2.Assets[i].MarginCollateral = 200
 		circuit2.Assets[i].PortfolioMarginCollateral = 199
 	}
@@ -371,7 +363,6 @@ func TestMockUserCircuit(t *testing.T) {
 	}
 }
 
-
 // The user has 50 types of assets. Additionally, an array of 350 types of assets, denoted as A, is provided, primarily to update the Cex asset information. At this point, it is necessary to prove that the 50 types of assets include information on all non-zero assets among the 350 types, although they may also include some zero asset information.
 // How to ensure the above constraints are correct:
 // 1. The 50 types of assets are represented by AssetIndex. Therefore, first convert the information of the 350 types of assets into a lookup table.
@@ -382,14 +373,14 @@ func TestMockUserCircuit(t *testing.T) {
 // 6. Then H^Q_0 * R_0 + H^Q_1 * R_1 + ... + H^Q_49 *R _49 = H^1*A_0 + H^2*A_1 + ... + H^350*A_349, If equal, it can be concluded that the 50 types of assets include information on all non-zero assets among the 350 types.
 
 type MockRandomLinearCombinationCircuit struct {
-	A []Variable  // AssetIndex
+	A         []Variable // AssetIndex
 	ExpectedA []Variable
-	B []Variable  // UserAssets
+	B         []Variable // UserAssets
 
-	// C []Variable  
-	// D []Variable  // 
+	// C []Variable
+	// D []Variable  //
 
-	H      Variable
+	H Variable
 }
 
 func CalculatePower(mod *big.Int, in []*big.Int, out []*big.Int) error {
@@ -401,10 +392,9 @@ func CalculatePower(mod *big.Int, in []*big.Int, out []*big.Int) error {
 	return nil
 }
 
-
 func (circuit MockRandomLinearCombinationCircuit) Define(api API) error {
 	t0 := logderivlookup.New(api)
-	
+
 	for i := 0; i < len(circuit.B); i++ {
 		t0.Insert(circuit.B[i])
 	}
@@ -417,8 +407,6 @@ func (circuit MockRandomLinearCombinationCircuit) Define(api API) error {
 	for i := 0; i < len(HPowers); i++ {
 		HTable.Insert(HPowers[i])
 	}
-
-
 
 	rc := rangecheck.New(api)
 	q0 := make([]Variable, 5*len(circuit.A))
@@ -433,7 +421,7 @@ func (circuit MockRandomLinearCombinationCircuit) Define(api API) error {
 			q0[5*i+j] = api.Add(start, j)
 		}
 	}
-	
+
 	r0 := t0.Lookup(q0[:]...)
 
 	subHTable := HTable.Lookup(q0[:]...)
@@ -442,7 +430,7 @@ func (circuit MockRandomLinearCombinationCircuit) Define(api API) error {
 	for i := 0; i < len(r0); i++ {
 		accumulateSumOfR0 = api.Add(accumulateSumOfR0, api.Mul(subHTable[i], r0[i]))
 	}
-	
+
 	var expectedAccumulateSumOfUserAssets Variable = 0
 	for i := 0; i < len(circuit.B); i++ {
 		expectedAccumulateSumOfUserAssets = api.Add(expectedAccumulateSumOfUserAssets, api.Mul(circuit.B[i], HPowers[i]))
@@ -472,13 +460,13 @@ func TestMockRandomLinearCombinationCircuit(t *testing.T) {
 	var circuit2 MockRandomLinearCombinationCircuit
 	circuit2.A = make([]frontend.Variable, 50)
 	for i := 0; i < len(circuit2.A); i++ {
-		circuit2.A[i] = 7*i
+		circuit2.A[i] = 7 * i
 	}
 	circuit2.ExpectedA = make([]frontend.Variable, 50*5)
 	circuit2.B = make([]frontend.Variable, 350*5)
 	c := 0
 	for i := 0; i < 350; i++ {
-		if i % 7 == 0 {
+		if i%7 == 0 {
 			rr := i / 7
 			circuit2.B[5*i] = rr % 2
 			circuit2.B[5*i+1] = rr % 3

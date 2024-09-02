@@ -9,7 +9,7 @@
       "Index": 0,
       "Equity": 14571647457,
       "Debt": 184812783,
-      "VipLoan": 7285823729,
+      "Loan": 7285823729,
       "Margin": 3642911864,
       "PortfolioMargin": 1821455932
     },
@@ -17,7 +17,7 @@
       "Index": 1,
       "Equity": 25424316291,
       "Debt": 3323064077,
-      "VipLoan": 12712158145,
+      "Loan": 12712158145,
       "Margin": 6356079073,
       "PortfolioMargin": 3178039536
     },
@@ -25,7 +25,7 @@
       "Index": 2,
       "Equity": 57834282404,
       "Debt": 19716095367,
-      "VipLoan": 28917141202,
+      "Loan": 28917141202,
       "Margin": 14458570601,
       "PortfolioMargin": 7229285300
     },
@@ -33,7 +33,7 @@
       "Index": 3,
       "Equity": 25100,
       "Debt": 669524367015,
-      "VipLoan": 12550,
+      "Loan": 12550,
       "Margin": 6275,
       "PortfolioMargin": 3138
     }

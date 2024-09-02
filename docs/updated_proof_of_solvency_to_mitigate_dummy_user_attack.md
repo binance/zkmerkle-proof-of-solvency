@@ -8,13 +8,13 @@ Enrico Bottazzi, research at the Ethereum Foundation, has reported an alarming p
 
 ## Updated Proof of solvency protocol
 
-To mitigate the “Dummy user attack”, The updated proof of solvency design introduces a third field, labeled "collateral" within the token configuration for each user. This field denotes the quantity of tokens utilized as collateral for borrowing other assets. Simultaneously, within the global token configuration, fields titled `collateral_ratio_tiers` and `collateral_asset_amount` are introduced, delineating the extent of collateral haircut for the asset involved and the amount of the collateral asset. For further elucidation, refer to the respective [page](https://www.binance.com/en/vip-loan). Under the loan business logic of Binance, this design effectively incorporates three distinct collateral fields catering to various loan businesses: VIP LOAN, COLLATERAL MARGIN, and COLLATERAL PORTFOLIO MARGIN. Consequently, the global token configuration encompasses three categories of collateral ratio tiers and amounts to accommodate these distinctions.
+To mitigate the “Dummy user attack”, The updated proof of solvency design introduces a third field, labeled "collateral" within the token configuration for each user. This field denotes the quantity of tokens utilized as collateral for borrowing other assets. Simultaneously, within the global token configuration, fields titled `collateral_ratio_tiers` and `collateral_asset_amount` are introduced, delineating the extent of collateral haircut for the asset involved and the amount of the collateral asset. For further elucidation, refer to the respective [page](https://www.binance.com/en/vip-loan). Under the loan business logic of Binance, this design effectively incorporates three distinct collateral fields catering to various loan businesses: LOAN, COLLATERAL MARGIN, and COLLATERAL PORTFOLIO MARGIN. Consequently, the global token configuration encompasses three categories of collateral ratio tiers and amounts to accommodate these distinctions.
 
 Based on above description, Let’s see a concrete example:
 
 Suppose there are 2 assets (ETH, USDT) and 3 users, and use USDT as the base denominated asset. Assume following user behaviors:
 
-- Alice deposit 10000 USDT to CEX, then use 10000 USDT as VIP LOAN collateral to borrow 2 ETH, and then use 1 ETH as VIP LOAN collateral to borrow 1000 USDT; and swap 1 ETH with Bob's 2000 USDT
+- Alice deposit 10000 USDT to CEX, then use 10000 USDT as LOAN collateral to borrow 2 ETH, and then use 1 ETH as LOAN collateral to borrow 1000 USDT; and swap 1 ETH with Bob's 2000 USDT
 - Bob deposit 10 ETH and 10000 USDT to CEX; swap 2000 USDT with Alice's 1 ETH
 - Carl deposit 10 ETH to CEX, then use 1 ETH as COLLATERAL MARGIN collateral to borrow 1000 USDT
 
@@ -22,14 +22,14 @@ The user's balance sheet is as following:
 
 |  | ETH (price:2000 USDT) | ETH | ETH  | ETH | ETH | USDT (price: 1 USDT) | USDT | USDT | USDT | USDT | Total Net Balance (USDT) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-|  | Equity | Debt | COLLATERAL VIP LOAN | COLLATERAL MARGIN | COLLATERAL PORTFOLIO MARGIN | Equity | Debt | COLLATERAL VIP LOAN | COLLATERAL MARGIN | COLLATERAL PORTFOLIO MARGIN |  |
+|  | Equity | Debt | COLLATERAL LOAN | COLLATERAL MARGIN | COLLATERAL PORTFOLIO MARGIN | Equity | Debt | COLLATERAL LOAN | COLLATERAL MARGIN | COLLATERAL PORTFOLIO MARGIN |  |
 | Alice | 1 | 2 | 1 | 0 | 0 | 13000 | 1000 | 10000 | 0 | 0 | 10000 |
 | Bob | 11 | 0 | 0 | 0 | 0 | 8000 | 0 | 0 | 0 | 0 | 30000 |
 | Carl | 10 | 0 | 0 | 1 | 0 | 1000 | 1000 | 0 | 0 | 0 | 20000 |
 
 The token’s configuration is as following:
 
-| Token Symbol | Total Equity | Total Debt | Price | COLLATERAL VIP LOAN amount | COLLATERAL MARGIN amount | COLLATERAL PORTFOLIO MARGIN amount | COLLATERAL VIP LOAN ratio tiers | COLLATERAL MARGIN ratio tiers | COLLATERAL PORTFOLIO MARGIN ratio tiers |
+| Token Symbol | Total Equity | Total Debt | Price | COLLATERAL LOAN amount | COLLATERAL MARGIN amount | COLLATERAL PORTFOLIO MARGIN amount | COLLATERAL LOAN ratio tiers | COLLATERAL MARGIN ratio tiers | COLLATERAL PORTFOLIO MARGIN ratio tiers |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | ETH | 22 | 2 | 2000 | 1 | 1 | 0 | [0-1000: 100%, 1000-2000: 90%, …, > 1000000: 0%] | […] | […] |
 | USDT | 22000 | 2000 | 1 | 10000 | 0 | 0 | [0-10000: 100%, 10000-20000: 90%, …, > 1000000: 0%] | […] | […] |
@@ -41,7 +41,7 @@ The assets CEX holds equal to the summation of every user net asset balance (Equ
 In proof of solvency, the following properties are guaranteed:
 
 - Each user's collaterals are enough to cover the debts according to the collateral ratio tiers: $\sum_{i \in tokens}{Debt_i} \leq \sum_{ij, i \in tokens, j \in collaterals}{CalcActualAssetValueByRatioTiers(Collateral_{ij})}$;
-    - Consider Alice as the example: Her debt is calculated as following: 2(ETH debt)*2000(ETH usdt price) + 1000(USDT debt)*1 = 5000; Her collateral is calculated as following: 1(ETH VIP LOAN collateral)*2000 + 10000(USDT VIP LOAN collateral)*1 = 12000; 12000 > 5000, So Alice can be added into the por proof generation process.
+    - Consider Alice as the example: Her debt is calculated as following: 2(ETH debt)*2000(ETH usdt price) + 1000(USDT debt)*1 = 5000; Her collateral is calculated as following: 1(ETH LOAN collateral)*2000 + 10000(USDT LOAN collateral)*1 = 12000; 12000 > 5000, So Alice can be added into the por proof generation process.
 - For each user, Each token’s equity should be equal or bigger than the sum of collaterals: $\sum_{i \in collaterals}{Collateral_i} \leq Equity$;
     - Consider Alice as the example: For ETH token, the collateral amouts is calculated as following: 1+0+0 ≤ 1; For USDT token, 10000+0+0 < 13000.
 - Each asset of user is a part of total net asset declared by CEX:

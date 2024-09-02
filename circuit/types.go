@@ -12,9 +12,9 @@ type (
 
 // Consider using variable or constant
 type TierRatio struct {
-	BoundaryValue      Variable
-	Ratio         	   Variable
-	PrecomputedValue   Variable
+	BoundaryValue    Variable
+	Ratio            Variable
+	PrecomputedValue Variable
 }
 
 type CexAssetInfo struct {
@@ -22,35 +22,35 @@ type CexAssetInfo struct {
 	TotalDebt   Variable
 	BasePrice   Variable
 
-	VipLoanCollateral     		Variable
-	MarginCollateral      		Variable
-	PortfolioMarginCollateral   Variable
+	LoanCollateral            Variable
+	MarginCollateral          Variable
+	PortfolioMarginCollateral Variable
 
-	VipLoanRatios               []TierRatio
-	MarginRatios                []TierRatio
-	PortfolioMarginRatios	    []TierRatio
+	LoanRatios            []TierRatio
+	MarginRatios          []TierRatio
+	PortfolioMarginRatios []TierRatio
 }
 
 type UserAssetInfo struct {
 	AssetIndex Variable
 	// The index means the position of tier ratios where the boundary value is larger than the collateral.
-	VipLoanCollateralIndex	 	Variable
+	LoanCollateralIndex Variable
 	// If the flag is 1, the boundary value of last tier ratio is less than the collateral.
-	VipLoanCollateralFlag	 	Variable
+	LoanCollateralFlag Variable
 
-	MarginCollateralIndex	 	Variable
-	MarginCollateralFlag	 	Variable
+	MarginCollateralIndex Variable
+	MarginCollateralFlag  Variable
 
 	PortfolioMarginCollateralIndex Variable
-	PortfolioMarginCollateralFlag Variable
+	PortfolioMarginCollateralFlag  Variable
 }
 
 type UserAssetMeta struct {
-	Equity 						Variable
-	Debt   						Variable
-	VipLoanCollateral    		Variable
-	MarginCollateral      		Variable
-	PortfolioMarginCollateral   Variable
+	Equity                    Variable
+	Debt                      Variable
+	LoanCollateral            Variable
+	MarginCollateral          Variable
+	PortfolioMarginCollateral Variable
 }
 
 type CreateUserOperation struct {

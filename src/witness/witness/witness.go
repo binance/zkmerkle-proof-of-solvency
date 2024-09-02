@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"sync"
+
 	"github.com/binance/zkmerkle-proof-of-solvency/src/utils"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/witness/config"
 	bsmt "github.com/bnb-chain/zkbnb-smt"
@@ -19,20 +21,19 @@ import (
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"sync"
 )
 
 type Witness struct {
-	accountTree        bsmt.SparseMerkleTree
-	totalOpsNumber     uint32
-	witnessModel       WitnessModel
-	ops                map[int][]utils.AccountInfo
-	cexAssets          []utils.CexAssetInfo
-	db                 *gorm.DB
-	ch                 chan BatchWitness
-	quit               chan int
-	accountHashChan    map[int][]chan []byte
-	currentBatchNumber int64
+	accountTree              bsmt.SparseMerkleTree
+	totalOpsNumber           uint32
+	witnessModel             WitnessModel
+	ops                      map[int][]utils.AccountInfo
+	cexAssets                []utils.CexAssetInfo
+	db                       *gorm.DB
+	ch                       chan BatchWitness
+	quit                     chan int
+	accountHashChan          map[int][]chan []byte
+	currentBatchNumber       int64
 	batchNumberMappingKeys   []int
 	batchNumberMappingValues []int
 }
@@ -55,7 +56,7 @@ func NewWitness(accountTree bsmt.SparseMerkleTree, totalOpsNumber uint32,
 	if err != nil {
 		panic(err.Error())
 	}
-	
+
 	return &Witness{
 		accountTree:        accountTree,
 		totalOpsNumber:     totalOpsNumber,
@@ -65,7 +66,7 @@ func NewWitness(accountTree bsmt.SparseMerkleTree, totalOpsNumber uint32,
 		ch:                 make(chan BatchWitness, 100),
 		quit:               make(chan int, 1),
 		currentBatchNumber: 0,
-		accountHashChan:   make(map[int][]chan []byte),
+		accountHashChan:    make(map[int][]chan []byte),
 	}
 }
 
@@ -146,10 +147,10 @@ func (w *Witness) Run() {
 					}
 					lowAccountIndex := index*averageCount + (j-startBatchNum)*userOpsPerBatch
 					highAccountIndex := averageCount + lowAccountIndex
-					if highAccountIndex > (j-startBatchNum+1) * userOpsPerBatch {
-						highAccountIndex = (j-startBatchNum+1) * userOpsPerBatch
+					if highAccountIndex > (j-startBatchNum+1)*userOpsPerBatch {
+						highAccountIndex = (j - startBatchNum + 1) * userOpsPerBatch
 					}
-					currentAccountIndex := (j-startBatchNum) * userOpsPerBatch
+					currentAccountIndex := (j - startBatchNum) * userOpsPerBatch
 					// fmt.Printf("worker num: %d, lowAccountInde: %d, highAccountIndex: %d, current: %d\n", index, lowAccountIndex, highAccountIndex, currentAccountIndex)
 					w.ComputeAccountHash(k, uint32(lowAccountIndex), uint32(highAccountIndex), uint32(currentAccountIndex))
 				}
@@ -177,7 +178,7 @@ func (w *Witness) Run() {
 
 			relativeBatchNum := i - startBatchNum
 			for j := relativeBatchNum * userOpsPerBatch; j < (relativeBatchNum+1)*userOpsPerBatch; j++ {
-				w.ExecuteBatchCreateUser(k, uint32(j), uint32(relativeBatchNum * userOpsPerBatch), batchCreateUserWit)
+				w.ExecuteBatchCreateUser(k, uint32(j), uint32(relativeBatchNum*userOpsPerBatch), batchCreateUserWit)
 			}
 			for j := 0; j < len(w.cexAssets); j++ {
 				commitments := utils.ConvertAssetInfoToBytes(w.cexAssets[j])
@@ -271,7 +272,7 @@ func (w *Witness) ExecuteBatchCreateUser(assetKey int, accountIndex uint32, curr
 		// update cexAssetInfo
 		w.cexAssets[account.Assets[p].Index].TotalEquity = utils.SafeAdd(w.cexAssets[account.Assets[p].Index].TotalEquity, account.Assets[p].Equity)
 		w.cexAssets[account.Assets[p].Index].TotalDebt = utils.SafeAdd(w.cexAssets[account.Assets[p].Index].TotalDebt, account.Assets[p].Debt)
-		w.cexAssets[account.Assets[p].Index].VipLoanCollateral = utils.SafeAdd(w.cexAssets[account.Assets[p].Index].VipLoanCollateral, account.Assets[p].VipLoan)
+		w.cexAssets[account.Assets[p].Index].LoanCollateral = utils.SafeAdd(w.cexAssets[account.Assets[p].Index].LoanCollateral, account.Assets[p].Loan)
 		w.cexAssets[account.Assets[p].Index].MarginCollateral = utils.SafeAdd(w.cexAssets[account.Assets[p].Index].MarginCollateral, account.Assets[p].Margin)
 		w.cexAssets[account.Assets[p].Index].PortfolioMarginCollateral = utils.SafeAdd(w.cexAssets[account.Assets[p].Index].PortfolioMarginCollateral, account.Assets[p].PortfolioMargin)
 	}

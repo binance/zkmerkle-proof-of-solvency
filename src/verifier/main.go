@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
+	"os"
+
 	"github.com/binance/zkmerkle-proof-of-solvency/circuit"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/utils"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/verifier/config"
@@ -15,8 +18,6 @@ import (
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/frontend"
 	"github.com/gocarina/gocsv"
-	"io/ioutil"
-	"os"
 )
 
 func LoadVerifyingKey(vkFileName string) (groth16.VerifyingKey, error) {
@@ -102,7 +103,7 @@ func main() {
 			CexAssetCommitment []string `csv:"cex_asset_list_commitments"`
 			AccountTreeRoots   []string `csv:"account_tree_roots"`
 			BatchCommitment    string   `csv:"batch_commitment"`
-			AssetsCount   	   int      `csv:"assets_count"`
+			AssetsCount        int      `csv:"assets_count"`
 		}
 		tmpProofs := []*Proof{}
 
@@ -140,7 +141,7 @@ func main() {
 		for i := 0; i < len(emptyCexAssetsInfo); i++ {
 			emptyCexAssetsInfo[i].TotalDebt = 0
 			emptyCexAssetsInfo[i].TotalEquity = 0
-			emptyCexAssetsInfo[i].VipLoanCollateral = 0
+			emptyCexAssetsInfo[i].LoanCollateral = 0
 			emptyCexAssetsInfo[i].MarginCollateral = 0
 			emptyCexAssetsInfo[i].PortfolioMarginCollateral = 0
 		}
@@ -149,7 +150,7 @@ func main() {
 		prevCexAssetListCommitments[1] = emptyCexAssetListCommitment
 		var finalCexAssetsInfoComm []byte
 		var accountTreeRoot []byte
-	
+
 		var vk groth16.VerifyingKey
 		currentAssetCountsTier := 0
 		for i := 0; i < len(proofs); i++ {

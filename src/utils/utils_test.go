@@ -18,7 +18,7 @@ func ComputeAssetsCommitmentForTest(userAssets []AccountAsset) []byte {
 	for i := 0; i < AssetCounts; i++ {
 		flattenUserAssets[5*i] = userAssets[i].Equity
 		flattenUserAssets[5*i+1] = userAssets[i].Debt
-		flattenUserAssets[5*i+2] = userAssets[i].VipLoan
+		flattenUserAssets[5*i+2] = userAssets[i].Loan
 		flattenUserAssets[5*i+3] = userAssets[i].Margin
 		flattenUserAssets[5*i+4] = userAssets[i].PortfolioMargin
 	}
@@ -45,13 +45,13 @@ func TestComputeUserAssetsCommitment(t *testing.T) {
 		testUserAssets1[i].Index = uint16(3 * i)
 		testUserAssets1[i].Equity = uint64(i*10 + 1000)
 		testUserAssets1[i].Debt = uint64(i*10 + 500)
-		testUserAssets1[i].VipLoan = uint64(i*10 + 100)
+		testUserAssets1[i].Loan = uint64(i*10 + 100)
 		testUserAssets1[i].Margin = uint64(i*10 + 100)
 		testUserAssets1[i].PortfolioMargin = uint64(i*10 + 100)
-		
+
 		userAssets[testUserAssets1[i].Index].Equity = testUserAssets1[i].Equity
 		userAssets[testUserAssets1[i].Index].Debt = testUserAssets1[i].Debt
-		userAssets[testUserAssets1[i].Index].VipLoan = testUserAssets1[i].VipLoan
+		userAssets[testUserAssets1[i].Index].Loan = testUserAssets1[i].Loan
 		userAssets[testUserAssets1[i].Index].Margin = testUserAssets1[i].Margin
 		userAssets[testUserAssets1[i].Index].PortfolioMargin = testUserAssets1[i].PortfolioMargin
 	}
@@ -76,13 +76,13 @@ func TestComputeUserAssetsCommitment(t *testing.T) {
 		testUserAssets1[i].Index = uint16(3*i) + 2
 		testUserAssets1[i].Equity = uint64(i*10 + 1000)
 		testUserAssets1[i].Debt = uint64(i*10 + 500)
-		testUserAssets1[i].VipLoan = uint64(i*10 + 100)
+		testUserAssets1[i].Loan = uint64(i*10 + 100)
 		testUserAssets1[i].Margin = uint64(i*10 + 100)
 		testUserAssets1[i].PortfolioMargin = uint64(i*10 + 100)
 
 		userAssets[testUserAssets1[i].Index].Equity = testUserAssets1[i].Equity
 		userAssets[testUserAssets1[i].Index].Debt = testUserAssets1[i].Debt
-		userAssets[testUserAssets1[i].Index].VipLoan = testUserAssets1[i].VipLoan
+		userAssets[testUserAssets1[i].Index].Loan = testUserAssets1[i].Loan
 		userAssets[testUserAssets1[i].Index].Margin = testUserAssets1[i].Margin
 		userAssets[testUserAssets1[i].Index].PortfolioMargin = testUserAssets1[i].PortfolioMargin
 	}
@@ -119,7 +119,7 @@ func TestParseUserDataSet(t *testing.T) {
 		t.Errorf("error: %s\n", err.Error())
 	}
 	totalNum := 0
-	for _, v  := range accounts {
+	for _, v := range accounts {
 		totalNum += len(v)
 	}
 	if totalNum != 170 {
@@ -129,7 +129,7 @@ func TestParseUserDataSet(t *testing.T) {
 	_ = cexAssetsInfo
 	accounts0, _ := ReadUserDataFromCsvFile("../sampledata/sample_users0.csv", cexAssetsInfo)
 	totalNum = 0
-	for _, v  := range accounts0 {
+	for _, v := range accounts0 {
 		totalNum += len(v)
 	}
 	if totalNum != 90 {

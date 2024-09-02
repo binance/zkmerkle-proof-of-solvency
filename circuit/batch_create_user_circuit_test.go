@@ -6,32 +6,32 @@ import (
 
 	// "github.com/binance/zkmerkle-proof-of-solvency/src/utils"
 	"bytes"
-	"time"
 	"encoding/base64"
 	"encoding/gob"
 	"math/big"
 	"math/rand"
+	"time"
+
+	"encoding/hex"
+	"os"
 
 	"github.com/binance/zkmerkle-proof-of-solvency/src/utils"
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark-crypto/ecc/bls24-315/fr"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/poseidon"
-	poseidon2 "github.com/consensys/gnark/std/hash/poseidon"
+	"github.com/consensys/gnark/backend/groth16"
+	"github.com/consensys/gnark/constraint/solver"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
-	"github.com/consensys/gnark/constraint/solver"
-	"github.com/consensys/gnark/backend/groth16"
-	"os"
-	"encoding/hex"
+	poseidon2 "github.com/consensys/gnark/std/hash/poseidon"
 )
-
 
 func TestBatchCreateUserCircuit(t *testing.T) {
 	solver.RegisterHint(IntegerDivision)
 	targetAssetCounts := 50
 	totalAssetsCount := 500
 	userOpsPerBatch := 1
-	
+
 	targetCircuitAssetCounts := 0
 	for _, v := range utils.AssetCountsTiers {
 		if targetAssetCounts <= v {
@@ -50,18 +50,18 @@ func TestBatchCreateUserCircuit(t *testing.T) {
 	fmt.Println("batch create user constraints number is ", oR1cs.GetNbConstraints())
 
 	userCircuit := ConstructValidBatch(targetAssetCounts, totalAssetsCount, userOpsPerBatch)
-	
+
 	witness, e := frontend.NewWitness(userCircuit, ecc.BN254.ScalarField())
 	if witness == nil {
 		t.Fatal(e)
 		t.Fatal("witness is nil")
-		
+
 	}
 	err = oR1cs.IsSolved(witness)
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	// pk, vk, err := groth16.Setup(oR1cs)
 	// if err != nil {
 	// 	panic(err)
@@ -79,7 +79,7 @@ func TestBatchCreateUserCircuit(t *testing.T) {
 	// _, _ = newR1CS.ReadFrom(buf)
 	// et := time.Now()
 	// fmt.Println("read r1cs time is ", et.Sub(s))
-	
+
 	// s = time.Now()
 	// pkFromFile, err := os.ReadFile("../src/keygen/zkpor50_1.pk")
 	// if err != nil {
@@ -102,7 +102,6 @@ func TestBatchCreateUserCircuit(t *testing.T) {
 	// et = time.Now()
 	// fmt.Println("read vk time is ", et.Sub(s))
 
-	
 	// publicWitness, err := witness.Public()
 	// if err != nil {
 	// 	panic(err)
@@ -216,28 +215,28 @@ func ConstructValidBatch(assetsCount int, totalAssetsCount int, userOpsPerBatch 
 	cexAssets := make([]utils.CexAssetInfo, totalAssetsCount)
 	for i := 0; i < totalAssetsCount; i++ {
 		u := utils.CexAssetInfo{
-			BasePrice:                 1,
-			Index:                     uint32(i),
+			BasePrice: 1,
+			Index:     uint32(i),
 		}
 		avgRatio := 100 / utils.TierCount
 		for j := 0; j < utils.TierCount; j++ {
-			u.VipLoanRatios[j] = utils.TierRatio{
-				BoundaryValue: new(big.Int).SetInt64(int64(100*(j+1))),
-				Ratio:         uint8(100-avgRatio*j),
+			u.LoanRatios[j] = utils.TierRatio{
+				BoundaryValue:    new(big.Int).SetInt64(int64(100 * (j + 1))),
+				Ratio:            uint8(100 - avgRatio*j),
 				PrecomputedValue: new(big.Int).SetInt64(0),
 			}
 			u.MarginRatios[j] = utils.TierRatio{
-				BoundaryValue: new(big.Int).SetInt64(int64(100*(j+1))),
-				Ratio:         uint8(100-avgRatio*j),
+				BoundaryValue:    new(big.Int).SetInt64(int64(100 * (j + 1))),
+				Ratio:            uint8(100 - avgRatio*j),
 				PrecomputedValue: new(big.Int).SetInt64(0),
 			}
 			u.PortfolioMarginRatios[j] = utils.TierRatio{
-				BoundaryValue: new(big.Int).SetInt64(int64(100*(j+1))),
-				Ratio:         uint8(100-avgRatio*j),
+				BoundaryValue:    new(big.Int).SetInt64(int64(100 * (j + 1))),
+				Ratio:            uint8(100 - avgRatio*j),
 				PrecomputedValue: new(big.Int).SetInt64(0),
 			}
 		}
-		utils.CalculatePrecomputedValue(u.VipLoanRatios[:])
+		utils.CalculatePrecomputedValue(u.LoanRatios[:])
 		utils.CalculatePrecomputedValue(u.MarginRatios[:])
 		utils.CalculatePrecomputedValue(u.PortfolioMarginRatios[:])
 		cexAssets[i] = u
@@ -255,11 +254,11 @@ func ConstructValidBatch(assetsCount int, totalAssetsCount int, userOpsPerBatch 
 		batchCreateUserWit.BeforeCexAssets[i] = cexAssets[i]
 	}
 	batchCreateUserWit.BeforeCEXAssetsCommitment = utils.ComputeCexAssetsCommitment(batchCreateUserWit.BeforeCexAssets)
-	
+
 	for i := 0; i < len(accounts); i++ {
 		accounts[i] = utils.AccountInfo{
-			AccountIndex:  uint32(i*10),
-			AccountId:     make([]byte, 32),
+			AccountIndex: uint32(i * 10),
+			AccountId:    make([]byte, 32),
 		}
 		rand.Read(accounts[i].AccountId)
 		accounts[i].AccountId = new(fr.Element).SetBytes(accounts[i].AccountId).Marshal()
@@ -271,14 +270,14 @@ func ConstructValidBatch(assetsCount int, totalAssetsCount int, userOpsPerBatch 
 		for j := 0; j < len(accounts[i].Assets); j++ {
 			accounts[i].Assets[j].Index = uint16(gap * j)
 			assetPrice := new(big.Int).SetUint64(cexAssets[accounts[i].Assets[j].Index].BasePrice)
-			accounts[i].Assets[j].VipLoan = uint64(rand.Intn(1000)) + 1
+			accounts[i].Assets[j].Loan = uint64(rand.Intn(1000)) + 1
 			accounts[i].Assets[j].Margin = uint64(rand.Intn(1000)) + 1
 			accounts[i].Assets[j].PortfolioMargin = uint64(rand.Intn(1000)) + 1
-			totalValue := accounts[i].Assets[j].VipLoan + accounts[i].Assets[j].Margin + accounts[i].Assets[j].PortfolioMargin
-			collateralValue := utils.CalculateAssetValueForCollateral(accounts[i].Assets[j].VipLoan,
-									accounts[i].Assets[j].Margin,
-									accounts[i].Assets[j].PortfolioMargin,
-									&cexAssets[accounts[i].Assets[j].Index])
+			totalValue := accounts[i].Assets[j].Loan + accounts[i].Assets[j].Margin + accounts[i].Assets[j].PortfolioMargin
+			collateralValue := utils.CalculateAssetValueForCollateral(accounts[i].Assets[j].Loan,
+				accounts[i].Assets[j].Margin,
+				accounts[i].Assets[j].PortfolioMargin,
+				&cexAssets[accounts[i].Assets[j].Index])
 			totalCollateral.Add(totalCollateral, collateralValue)
 			collateralValue.Div(collateralValue, assetPrice)
 			accounts[i].Assets[j].Debt = uint64(rand.Intn(int(collateralValue.Int64()))) + 1
@@ -292,7 +291,7 @@ func ConstructValidBatch(assetsCount int, totalAssetsCount int, userOpsPerBatch 
 			// update cexAssets
 			cexAssets[accounts[i].Assets[j].Index].TotalEquity += accounts[i].Assets[j].Equity
 			cexAssets[accounts[i].Assets[j].Index].TotalDebt += accounts[i].Assets[j].Debt
-			cexAssets[accounts[i].Assets[j].Index].VipLoanCollateral += accounts[i].Assets[j].VipLoan
+			cexAssets[accounts[i].Assets[j].Index].LoanCollateral += accounts[i].Assets[j].Loan
 			cexAssets[accounts[i].Assets[j].Index].MarginCollateral += accounts[i].Assets[j].Margin
 			cexAssets[accounts[i].Assets[j].Index].PortfolioMarginCollateral += accounts[i].Assets[j].PortfolioMargin
 		}
@@ -321,9 +320,9 @@ func ConstructValidBatch(assetsCount int, totalAssetsCount int, userOpsPerBatch 
 	batchCreateUserWit.AfterAccountTreeRoot = accountTree.Root()
 	batchCreateUserWit.AfterCEXAssetsCommitment = utils.ComputeCexAssetsCommitment(cexAssets)
 	batchCreateUserWit.BatchCommitment = poseidon.PoseidonBytes(batchCreateUserWit.BeforeAccountTreeRoot,
-														batchCreateUserWit.AfterAccountTreeRoot,
-														batchCreateUserWit.BeforeCEXAssetsCommitment,
-														batchCreateUserWit.AfterCEXAssetsCommitment)	
+		batchCreateUserWit.AfterAccountTreeRoot,
+		batchCreateUserWit.BeforeCEXAssetsCommitment,
+		batchCreateUserWit.AfterCEXAssetsCommitment)
 	var serializeBuf bytes.Buffer
 	enc := gob.NewEncoder(&serializeBuf)
 	err = enc.Encode(batchCreateUserWit)
@@ -345,7 +344,7 @@ func TestSetBatchCreateUserCircuitWitness(t *testing.T) {
 			t.Fatal("asset counts not match")
 		}
 	}
-	fmt.Println("assets info ", circuitWitness.CreateUserOps[0].Assets[0].VipLoanCollateralIndex)
+	fmt.Println("assets info ", circuitWitness.CreateUserOps[0].Assets[0].LoanCollateralIndex)
 	fmt.Println("assets info ", circuitWitness.CreateUserOps[0].Assets[0].MarginCollateralIndex)
 	fmt.Println("assets info ", circuitWitness.CreateUserOps[0].Assets[0].PortfolioMarginCollateralIndex)
 }
@@ -362,9 +361,9 @@ func (c PoseidonCircuit) Define(api API) error {
 
 func TestPoseidon(t *testing.T) {
 	circuit := PoseidonCircuit{
-		Vs : make([]frontend.Variable, 37),
+		Vs: make([]frontend.Variable, 37),
 	}
-	
+
 	r1cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit, frontend.IgnoreUnconstrainedInputs())
 	if err != nil {
 		t.Fatal(err)
