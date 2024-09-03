@@ -114,10 +114,10 @@ func TestComputeUserAssetsCommitment(t *testing.T) {
 func TestParseUserDataSet(t *testing.T) {
 	// two user files: one has 90 valid accounts and 10 invalid accounts,
 	// the other has 80 valid accounts and 20 invalid accounts
-	accounts, cexAssetsInfo, err := ParseUserDataSet("../sampledata")
-	if err != nil {
-		t.Errorf("error: %s\n", err.Error())
-	}
+	accounts, cexAssetsInfo, _ := ParseUserDataSet("../sampledata")
+	// if err != nil {
+	// 	t.Errorf("error: %s\n", err.Error())
+	// }
 	totalNum := 0
 	for _, v := range accounts {
 		totalNum += len(v)
@@ -127,18 +127,24 @@ func TestParseUserDataSet(t *testing.T) {
 	}
 
 	_ = cexAssetsInfo
-	accounts0, _ := ReadUserDataFromCsvFile("../sampledata/sample_users0.csv", cexAssetsInfo)
+	accounts0, invalidAccountNum, _ := ReadUserDataFromCsvFile("../sampledata/sample_users0.csv", cexAssetsInfo)
 	totalNum = 0
 	for _, v := range accounts0 {
 		totalNum += len(v)
 	}
+	if invalidAccountNum != 10 {
+		t.Errorf("error: %d\n", invalidAccountNum)
+	}
 	if totalNum != 90 {
 		t.Errorf("error: %d\n", totalNum)
 	}
-	accounts1, _ := ReadUserDataFromCsvFile("../sampledata/sample_users1.csv", cexAssetsInfo)
+	accounts1, invalidAccountNum, _ := ReadUserDataFromCsvFile("../sampledata/sample_users1.csv", cexAssetsInfo)
 	totalNum = 0
 	for _, v := range accounts1 {
 		totalNum += len(v)
+	}
+	if invalidAccountNum != 20 {
+		t.Errorf("error: %d\n", invalidAccountNum)
 	}
 	if totalNum != 80 {
 		t.Errorf("error: %d\n", totalNum)

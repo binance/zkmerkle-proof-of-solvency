@@ -232,6 +232,7 @@ func ParseUserDataSet(dirname string) (map[int][]AccountInfo, []CexAssetInfo, er
 
 	type UserParseRes struct {
 		accounts map[int][]AccountInfo
+		invalidAccNum int
 	}
 	results := make([]chan UserParseRes, workersNum)
 	for i := 0; i < workersNum; i++ {
@@ -264,12 +265,13 @@ func ParseUserDataSet(dirname string) (map[int][]AccountInfo, []CexAssetInfo, er
 				if j >= len(userFileNames) {
 					break
 				}
-				tmpAccountInfo, err := ReadUserDataFromCsvFile(userFileNames[j], cexAssetInfo)
+				tmpAccountInfo, invalidAccountNum, err := ReadUserDataFromCsvFile(userFileNames[j], cexAssetInfo)
 				if err != nil {
 					panic(err.Error())
 				}
 				results[workerId] <- UserParseRes{
 					accounts: tmpAccountInfo,
+					invalidAccNum: invalidAccountNum,
 				}
 			}
 		}(i)
@@ -288,9 +290,11 @@ func ParseUserDataSet(dirname string) (map[int][]AccountInfo, []CexAssetInfo, er
 	}()
 
 	quit := make(chan bool)
+	totalInvalidAccountNum := 0
 	go func() {
 		for i := 0; i < len(userFileNames); i++ {
 			res := <-results[i%workersNum]
+			totalInvalidAccountNum += res.invalidAccNum
 			if i != 0 {
 				currentAccountIndex := 0
 				for _, v := range accountInfo {
@@ -313,6 +317,10 @@ func ParseUserDataSet(dirname string) (map[int][]AccountInfo, []CexAssetInfo, er
 	}()
 	<-quit
 	gcQuitChan <- true
+	if totalInvalidAccountNum > 0 {
+		fmt.Println("the total invalid account number is ", totalInvalidAccountNum)
+		return accountInfo, cexAssetInfo, errors.New("invalid account data")
+	}
 	return accountInfo, cexAssetInfo, nil
 }
 
@@ -504,16 +512,16 @@ func ParseCexAssetInfoFromFile(name string, assetIndexes []string) ([]CexAssetIn
 
 }
 
-func ReadUserDataFromCsvFile(name string, cexAssetsInfo []CexAssetInfo) (map[int][]AccountInfo, error) {
+func ReadUserDataFromCsvFile(name string, cexAssetsInfo []CexAssetInfo) (map[int][]AccountInfo, int, error) {
 	f, err := os.Open(name)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer f.Close()
 	csvReader := csv.NewReader(f)
 	data, err := csvReader.ReadAll()
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	accountIndex := 0
 	accounts := make(map[int][]AccountInfo)
@@ -644,7 +652,7 @@ func ReadUserDataFromCsvFile(name string, cexAssetsInfo []CexAssetInfo) (map[int
 		validAccountNum += len(v)
 	}
 	fmt.Println("The valid accounts number is ", validAccountNum)
-	return accounts, nil
+	return accounts, invalidCounts, nil
 }
 
 func CalculateAssetValueForCollateral(loan uint64, margin uint64, portfolioMargin uint64, cexAssetInfo *CexAssetInfo) *big.Int {
