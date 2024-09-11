@@ -391,16 +391,16 @@ func ParseTiersRatioFromStr(tiersRatioEnc string) ([TierCount]TierRatio, error) 
 		if len(tmpTierRatio) != 2 || len(rangeValues) != 2 {
 			return PaddingTierRatios([]TierRatio{}), errors.New("tiers ratio data wrong")
 		}
-		lowBoundaryValue, err := ConvertFloatStrToUint64(rangeValues[0], 1)
+		lowBoundaryValue, err := ConvertFloatStrToUint64(strings.Trim(rangeValues[0], " "), 1)
 		if err != nil {
 			return PaddingTierRatios([]TierRatio{}), err
 		}
-		boundaryValue, err := ConvertFloatStrToUint64(rangeValues[1], 1)
+		boundaryValue, err := ConvertFloatStrToUint64(strings.Trim(rangeValues[1], " "), 1)
 		if err != nil {
 			return PaddingTierRatios([]TierRatio{}), err
 		}
 
-		ratio, err := ConvertFloatStrToUint64(tmpTierRatio[1], 1)
+		ratio, err := ConvertFloatStrToUint64(strings.Trim(tmpTierRatio[1], " "), 1)
 		if err != nil {
 			return PaddingTierRatios([]TierRatio{}), err
 		}
@@ -608,7 +608,7 @@ func ReadUserDataFromCsvFile(name string, cexAssetsInfo []CexAssetInfo) (map[int
 				assetTotalCollateral := SafeAdd(tmpAsset.Loan, tmpAsset.Margin)
 				assetTotalCollateral = SafeAdd(assetTotalCollateral, tmpAsset.PortfolioMargin)
 				if assetTotalCollateral > tmpAsset.Equity {
-					fmt.Println("account", data[i][1], "data wrong: total collateral is bigger than equity")
+					fmt.Println("account", data[i][1], "data wrong: total collateral is bigger than equity", assetTotalCollateral, tmpAsset.Equity)
 					invalidCounts += 1
 					invalidAccountFlag = true
 					break

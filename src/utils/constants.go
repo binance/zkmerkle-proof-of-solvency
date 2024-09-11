@@ -60,6 +60,16 @@ var (
 		"doge":  true,
         "PEPE":  true,
 		"pepe":  true,
+		"FLOKI": true,
+		"floki": true,
+		"IDRT":  true,
+		"idrt":  true,
+		"DOGS":  true,
+		"dogs":  true,
+		"BONK":  true,
+		"bonk":  true,
+		"1000SATS": true,
+		"1000sats": true,
 	}
 	// the key is the number of assets user own
 	// the value is the number of batch create user ops

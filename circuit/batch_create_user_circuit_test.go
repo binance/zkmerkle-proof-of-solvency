@@ -30,7 +30,7 @@ func TestBatchCreateUserCircuit(t *testing.T) {
 	solver.RegisterHint(IntegerDivision)
 	targetAssetCounts := 50
 	totalAssetsCount := 500
-	userOpsPerBatch := 1
+	userOpsPerBatch := 3
 
 	targetCircuitAssetCounts := 0
 	for _, v := range utils.AssetCountsTiers {
