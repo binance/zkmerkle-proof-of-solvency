@@ -31,7 +31,7 @@ if __name__ == "__main__":
 
     rerun_retry = 0
     while True:
-        time.sleep(2*60)
+        time.sleep(5*60)
         cur_delta = get_delta()
         if prev_delta == 0 or cur_delta == 0:
             print("all proofs has been generated")
