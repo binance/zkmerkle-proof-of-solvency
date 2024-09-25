@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"math/rand"
 	"runtime"
 	"time"
 
@@ -67,6 +68,7 @@ func NewProver(config *config.Config) *Prover {
 }
 
 func (p *Prover) Run(flag bool) {
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	p.proofModel.CreateProofTable()
 	batchWitnessFetch := func() (*witness.BatchWitness, error) {
 		lock := utils.GetRedisLockByKey(p.redisConn, utils.RedisLockKey)
@@ -102,7 +104,24 @@ func (p *Prover) Run(flag bool) {
 		var batchWitness *witness.BatchWitness
 		var err error
 		if !flag {
-			batchWitness, err = batchWitnessFetch()
+			const maxRetries = 10
+			maxDelay := 30 * time.Second
+			initialDelay := 100 * time.Millisecond
+			for attempt := 0; attempt < maxRetries; attempt++ {
+				batchWitness, err = batchWitnessFetch()
+				if err == nil {
+					break
+				}
+				maxJitter := 200 * time.Millisecond
+				jitter := time.Duration(rng.Float64() * float64(maxJitter))
+				sleepTime := initialDelay + jitter
+				if sleepTime > maxDelay {
+					sleepTime = maxDelay
+				}
+				fmt.Println("sleepTime: ", sleepTime.String())
+				time.Sleep(sleepTime)
+				initialDelay *= 2
+			}
 			if errors.Is(err, utils.GetRedisLockFailed) {
 				fmt.Println("get redis lock failed")
 				continue

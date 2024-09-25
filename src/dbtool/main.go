@@ -122,7 +122,7 @@ func main() {
 		}
 		proofCounts, err := proofModel.GetRowCounts()
 		if err != nil {
-			panic("proof table get row counts error:" + err.Error())
+			proofCounts = 0
 		}
 		fmt.Printf("Total witness item %d, Published item %d, Pending item %d, Finished item %d\n", witnessCounts[0], witnessCounts[1], witnessCounts[2], witnessCounts[3])
 		fmt.Println(witnessCounts[0] - proofCounts)
