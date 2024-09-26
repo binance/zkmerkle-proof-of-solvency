@@ -1,7 +1,7 @@
 # zkmerkle-proof-of-solvency
 ## Circuit Design
 
-See the [technical blog](https://gusty-radon-13b.notion.site/Proof-of-solvency-61414c3f7c1e46c5baec32b9491b2b3d) for more details about background and circuit design
+See the [technical blog](./docs/updated_proof_of_solvency_to_mitigate_dummy_user_attack.md) for more details about background and circuit design
 ## How to run
 
 ### Run third-party services
