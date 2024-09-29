@@ -20,17 +20,19 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/bls24-315/fr"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/poseidon"
 	"github.com/consensys/gnark/backend/groth16"
+	"github.com/consensys/gnark/constraint"
+	"github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/constraint/solver"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
 	poseidon2 "github.com/consensys/gnark/std/hash/poseidon"
 )
 
-func TestBatchCreateUserCircuit(t *testing.T) {
+func ConstructR1csAndWitness() (constraint.ConstraintSystem, witness.Witness, error) {
 	solver.RegisterHint(IntegerDivision)
-	targetAssetCounts := 50
+	targetAssetCounts := 500
 	totalAssetsCount := 500
-	userOpsPerBatch := 3
+	userOpsPerBatch := 2
 
 	targetCircuitAssetCounts := 0
 	for _, v := range utils.AssetCountsTiers {
@@ -43,7 +45,7 @@ func TestBatchCreateUserCircuit(t *testing.T) {
 	s := time.Now()
 	oR1cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, emptyUserCircuit, frontend.IgnoreUnconstrainedInputs())
 	if err != nil {
-		t.Fatal(err)
+		return nil, nil, err
 	}
 	et := time.Now()
 	fmt.Println("compile time is ", et.Sub(s))
@@ -53,80 +55,116 @@ func TestBatchCreateUserCircuit(t *testing.T) {
 
 	witness, e := frontend.NewWitness(userCircuit, ecc.BN254.ScalarField())
 	if witness == nil {
-		t.Fatal(e)
-		t.Fatal("witness is nil")
+		return nil, nil, e
+	}
+	return oR1cs, witness, nil
+}
 
+func TestBatchCreateUserCircuit(t *testing.T) {
+	oR1cs, witness, err := ConstructR1csAndWitness()
+	if err != nil {
+		t.Fatal(err)
 	}
 	err = oR1cs.IsSolved(witness)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	// pk, vk, err := groth16.Setup(oR1cs)
-	// if err != nil {
-	// 	panic(err)
-	// } else {
-	// 	fmt.Println("setup done")
-	// }
-
-	// s := time.Now()
-	// r1csFromFile, err := os.ReadFile("../src/keygen/zkpor50_1.r1cs")
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// buf := bytes.NewBuffer(r1csFromFile)
-	// newR1CS := groth16.NewCS(ecc.BN254)
-	// _, _ = newR1CS.ReadFrom(buf)
-	// et := time.Now()
-	// fmt.Println("read r1cs time is ", et.Sub(s))
-
-	// s = time.Now()
-	// pkFromFile, err := os.ReadFile("../src/keygen/zkpor50_1.pk")
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// buf = bytes.NewBuffer(pkFromFile)
-	// pk := groth16.NewProvingKey(ecc.BN254)
-	// pk.UnsafeReadFrom(buf)
-	// et = time.Now()
-	// fmt.Println("read pk time is ", et.Sub(s))
-
-	// s = time.Now()
-	// vkFromFile, err := os.ReadFile("../src/keygen/zkpor50_1.vk")
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// buf = bytes.NewBuffer(vkFromFile)
-	// vk := groth16.NewVerifyingKey(ecc.BN254)
-	// _, _ = vk.ReadFrom(buf)
-	// et = time.Now()
-	// fmt.Println("read vk time is ", et.Sub(s))
-
-	// publicWitness, err := witness.Public()
-	// if err != nil {
-	// 	panic(err)
-	// } else {
-	// 	fmt.Println("public witness")
-	// }
-	// startTime := time.Now()
-	// proof, err := groth16.Prove(oR1cs, pk, witness)
-	// if err != nil {
-	// 	panic(err)
-	// } else {
-	// 	fmt.Println("proof")
-	// }
-	// endTime := time.Now()
-	// fmt.Println("prove time is ", endTime.Sub(startTime))
-	// err = groth16.Verify(proof, vk, publicWitness)
-	// if err != nil {
-	// 	panic(err)
-	// } else {
-	// 	fmt.Println("verify")
-	// }
-
 }
 
-func TestBatchCreateUserCircuitFromFile(t *testing.T) {
+func TestBatchCreateUserCircuitFromKeySetup(t *testing.T) {
+	oR1cs, witness, err := ConstructR1csAndWitness()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pk, vk, err := groth16.Setup(oR1cs)
+	if err != nil {
+		panic(err)
+	}
+	publicWitness, err := witness.Public()
+	if err != nil {
+		panic(err)
+	} else {
+		fmt.Println("public witness")
+	}
+	startTime := time.Now()
+	proof, err := groth16.Prove(oR1cs, pk, witness)
+	if err != nil {
+		panic(err)
+	} else {
+		fmt.Println("proof")
+	}
+	endTime := time.Now()
+	fmt.Println("prove time is ", endTime.Sub(startTime))
+	err = groth16.Verify(proof, vk, publicWitness)
+	if err != nil {
+		panic(err)
+	} else {
+		fmt.Println("verify")
+	}
+}
+
+func TestBatchCreateUserCircuitFromKeyFiles(t *testing.T) {
+	oR1cs, witness, err := ConstructR1csAndWitness()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := time.Now()
+	r1csFromFile, err := os.ReadFile("../src/keygen/zkpor50_1.r1cs")
+	if err != nil {
+		panic(err)
+	}
+	buf := bytes.NewBuffer(r1csFromFile)
+	newR1CS := groth16.NewCS(ecc.BN254)
+	_, _ = newR1CS.ReadFrom(buf)
+	et := time.Now()
+	fmt.Println("read r1cs time is ", et.Sub(s))
+
+	s = time.Now()
+	pkFromFile, err := os.ReadFile("../src/keygen/zkpor50_1.pk")
+	if err != nil {
+		panic(err)
+	}
+	buf = bytes.NewBuffer(pkFromFile)
+	pk := groth16.NewProvingKey(ecc.BN254)
+	pk.UnsafeReadFrom(buf)
+	et = time.Now()
+	fmt.Println("read pk time is ", et.Sub(s))
+
+	s = time.Now()
+	vkFromFile, err := os.ReadFile("../src/keygen/zkpor50_1.vk")
+	if err != nil {
+		panic(err)
+	}
+	buf = bytes.NewBuffer(vkFromFile)
+	vk := groth16.NewVerifyingKey(ecc.BN254)
+	_, _ = vk.ReadFrom(buf)
+	et = time.Now()
+	fmt.Println("read vk time is ", et.Sub(s))
+
+	publicWitness, err := witness.Public()
+	if err != nil {
+		panic(err)
+	} else {
+		fmt.Println("public witness")
+	}
+	startTime := time.Now()
+	proof, err := groth16.Prove(oR1cs, pk, witness)
+	if err != nil {
+		panic(err)
+	} else {
+		fmt.Println("proof")
+	}
+	endTime := time.Now()
+	fmt.Println("prove time is ", endTime.Sub(startTime))
+	err = groth16.Verify(proof, vk, publicWitness)
+	if err != nil {
+		panic(err)
+	} else {
+		fmt.Println("verify")
+	}
+}
+
+func TestBatchCreateUserCircuitFromWitnessFile(t *testing.T) {
 	targetAssetCounts := 30
 	totalAssetsCount := 500
 	userOpsPerBatch := 1
