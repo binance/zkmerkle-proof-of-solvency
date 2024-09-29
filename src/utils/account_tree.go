@@ -5,7 +5,6 @@ import (
 	"github.com/bnb-chain/zkbnb-smt/database"
 	"github.com/bnb-chain/zkbnb-smt/database/memory"
 	"github.com/bnb-chain/zkbnb-smt/database/redis"
-	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/poseidon"
 	"hash"
 	"time"
@@ -14,19 +13,6 @@ import (
 var (
 	NilAccountHash []byte
 )
-
-func init() {
-	zero := &fr.Element{0, 0, 0, 0}
-	poseidonHasher := poseidon.NewPoseidon()
-	emptyAssets := make([]AccountAsset, AssetCounts)
-	for i := 0; i < AssetCounts; i++ {
-		emptyAssets[i].Index = uint16(i)
-	}
-	emptyAssetCommitment := ComputeUserAssetsCommitment(&poseidonHasher, emptyAssets)
-	tempHash := poseidon.Poseidon(zero, zero, zero, new(fr.Element).SetBytes(emptyAssetCommitment)).Bytes()
-	NilAccountHash = tempHash[:]
-	// fmt.Printf("NilAccountHash is %x\n", NilAccountHash)
-}
 
 func NewAccountTree(driver string, addr string) (accountTree bsmt.SparseMerkleTree, err error) {
 

@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
+	"os"
+
 	"github.com/binance/zkmerkle-proof-of-solvency/circuit"
-	"github.com/binance/zkmerkle-proof-of-solvency/src/prover/prover"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/utils"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/verifier/config"
 	"github.com/consensys/gnark-crypto/ecc"
@@ -16,9 +18,21 @@ import (
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/frontend"
 	"github.com/gocarina/gocsv"
-	"io/ioutil"
-	"os"
 )
+
+func LoadVerifyingKey(vkFileName string) (groth16.VerifyingKey, error) {
+	vkFile, err := os.ReadFile(vkFileName)
+	if err != nil {
+		return nil, err
+	}
+	buf := bytes.NewBuffer(vkFile)
+	vk := groth16.NewVerifyingKey(ecc.BN254)
+	_, err = vk.ReadFrom(buf)
+	if err != nil {
+		return nil, err
+	}
+	return vk, nil
+}
 
 func main() {
 	userFlag := flag.Bool("user", false, "flag which indicates user proof verification")
@@ -48,22 +62,15 @@ func main() {
 		}
 
 		// padding user assets
-		userAssets := make([]utils.AccountAsset, utils.AssetCounts)
-		for i := 0; i < utils.AssetCounts; i++ {
-			userAssets[i].Index = uint16(i)
-		}
-		for i := 0; i < len(userConfig.Assets); i++ {
-			userAssets[userConfig.Assets[i].Index] = userConfig.Assets[i]
-		}
 		hasher := poseidon.NewPoseidon()
-		assetCommitment := utils.ComputeUserAssetsCommitment(&hasher, userAssets)
+		assetCommitment := utils.ComputeUserAssetsCommitment(&hasher, userConfig.Assets)
 		hasher.Reset()
 		// compute new account leaf node hash
 		accountIdHash, err := hex.DecodeString(userConfig.AccountIdHash)
 		if err != nil || len(accountIdHash) != 32 {
 			panic("the AccountIdHash is invalid")
 		}
-		accountHash := poseidon.PoseidonBytes(accountIdHash, userConfig.TotalEquity.Bytes(), userConfig.TotalDebt.Bytes(), assetCommitment)
+		accountHash := poseidon.PoseidonBytes(accountIdHash, userConfig.TotalEquity.Bytes(), userConfig.TotalDebt.Bytes(), userConfig.TotalCollateral.Bytes(), assetCommitment)
 		fmt.Printf("merkle leave hash: %x\n", accountHash)
 		verifyFlag := utils.VerifyMerkleProof(root, userConfig.AccountIndex, proof, accountHash)
 		if verifyFlag {
@@ -82,11 +89,6 @@ func main() {
 			panic(err.Error())
 		}
 
-		vk, err := prover.LoadVerifyingKey(verifierConfig.ZkKeyName)
-		if err != nil {
-			panic(err.Error())
-		}
-
 		f, err := os.Open(verifierConfig.ProofTable)
 		if err != nil {
 			panic(err.Error())
@@ -101,6 +103,7 @@ func main() {
 			CexAssetCommitment []string `csv:"cex_asset_list_commitments"`
 			AccountTreeRoots   []string `csv:"account_tree_roots"`
 			BatchCommitment    string   `csv:"batch_commitment"`
+			AssetsCount        int      `csv:"assets_count"`
 		}
 		tmpProofs := []*Proof{}
 
@@ -118,7 +121,7 @@ func main() {
 		prevCexAssetListCommitments := make([][]byte, 2)
 		prevAccountTreeRoots := make([][]byte, 2)
 		// depth-28 empty account tree root
-		emptyAccountTreeRoot, err := hex.DecodeString("0e85b74bfd43747cb5e18ecb067727243f2e919a91ef69d86b5a27ed74bea7c2")
+		emptyAccountTreeRoot, err := hex.DecodeString("08696bfcb563a2ee4dde9e1dbd34f68d3f4643df6e3709cdb1855c9f886240c7")
 		if err != nil {
 			fmt.Println("wrong empty empty account tree root")
 			return
@@ -138,12 +141,18 @@ func main() {
 		for i := 0; i < len(emptyCexAssetsInfo); i++ {
 			emptyCexAssetsInfo[i].TotalDebt = 0
 			emptyCexAssetsInfo[i].TotalEquity = 0
+			emptyCexAssetsInfo[i].LoanCollateral = 0
+			emptyCexAssetsInfo[i].MarginCollateral = 0
+			emptyCexAssetsInfo[i].PortfolioMarginCollateral = 0
 		}
 		emptyCexAssetListCommitment := utils.ComputeCexAssetsCommitment(emptyCexAssetsInfo)
 		expectFinalCexAssetsInfoComm := utils.ComputeCexAssetsCommitment(cexAssetsInfo)
 		prevCexAssetListCommitments[1] = emptyCexAssetListCommitment
 		var finalCexAssetsInfoComm []byte
 		var accountTreeRoot []byte
+
+		var vk groth16.VerifyingKey
+		currentAssetCountsTier := 0
 		for i := 0; i < len(proofs); i++ {
 			if batchNumber != proofs[i].BatchNumber {
 				panic("the batch number is not monotonically increasing by 1")
@@ -198,6 +207,8 @@ func main() {
 
 			if string(accountTreeRoots[0]) != string(prevAccountTreeRoots[1]) ||
 				string(cexAssetListCommitments[0]) != string(prevCexAssetListCommitments[1]) {
+				fmt.Printf("accoun tree root: %x:%x\n", accountTreeRoots[0], prevAccountTreeRoots[1])
+				fmt.Printf("cex asset list commitment: %x:%x\n", cexAssetListCommitments[0], prevCexAssetListCommitments[1])
 				fmt.Println("mismatch account tree root or cex asset list commitment:", batchNumber)
 				return
 			}
@@ -208,6 +219,22 @@ func main() {
 			vWitness, err := frontend.NewWitness(verifyWitness, ecc.BN254.ScalarField(), frontend.PublicOnly())
 			if err != nil {
 				panic(err.Error())
+			}
+			if proofs[i].AssetsCount != currentAssetCountsTier {
+				index := -1
+				for j := 0; j < len(verifierConfig.AssetsCountTiers); j++ {
+					if verifierConfig.AssetsCountTiers[j] == proofs[i].AssetsCount {
+						index = j
+						break
+					}
+				}
+				if index == -1 {
+					panic("invalid asset counts tier")
+				}
+				vk, err = LoadVerifyingKey(verifierConfig.ZkKeyName[index] + ".vk")
+				if err != nil {
+					panic(err.Error())
+				}
 			}
 			err = groth16.Verify(proof, vk, vWitness)
 			if err != nil {

@@ -6,11 +6,13 @@ import (
 	"encoding/gob"
 	"fmt"
 	"log"
-	"math/big"
 	"os"
 	"runtime"
+	"sort"
 	"sync/atomic"
 	"time"
+
+	"sync"
 
 	"github.com/binance/zkmerkle-proof-of-solvency/src/utils"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/witness/config"
@@ -22,20 +24,22 @@ import (
 )
 
 type Witness struct {
-	accountTree        bsmt.SparseMerkleTree
-	totalOpsNumber     uint32
-	witnessModel       WitnessModel
-	ops                []utils.AccountInfo
-	cexAssets          []utils.CexAssetInfo
-	db                 *gorm.DB
-	ch                 chan BatchWitness
-	quit               chan int
-	accountHashChan    [utils.BatchCreateUserOpsCounts]chan []byte
-	currentBatchNumber int64
+	accountTree              bsmt.SparseMerkleTree
+	totalOpsNumber           uint32
+	witnessModel             WitnessModel
+	ops                      map[int][]utils.AccountInfo
+	cexAssets                []utils.CexAssetInfo
+	db                       *gorm.DB
+	ch                       chan BatchWitness
+	quit                     chan int
+	accountHashChan          map[int][]chan []byte
+	currentBatchNumber       int64
+	batchNumberMappingKeys   []int
+	batchNumberMappingValues []int
 }
 
 func NewWitness(accountTree bsmt.SparseMerkleTree, totalOpsNumber uint32,
-	ops []utils.AccountInfo, cexAssets []utils.CexAssetInfo,
+	ops map[int][]utils.AccountInfo, cexAssets []utils.CexAssetInfo,
 	config *config.Config) *Witness {
 	newLogger := logger.New(
 		log.New(os.Stdout, "\r\n", log.LstdFlags), // io writer
@@ -52,6 +56,7 @@ func NewWitness(accountTree bsmt.SparseMerkleTree, totalOpsNumber uint32,
 	if err != nil {
 		panic(err.Error())
 	}
+
 	return &Witness{
 		accountTree:        accountTree,
 		totalOpsNumber:     totalOpsNumber,
@@ -61,6 +66,7 @@ func NewWitness(accountTree bsmt.SparseMerkleTree, totalOpsNumber uint32,
 		ch:                 make(chan BatchWitness, 100),
 		quit:               make(chan int, 1),
 		currentBatchNumber: 0,
+		accountHashChan:    make(map[int][]chan []byte),
 	}
 }
 
@@ -79,7 +85,7 @@ func (w *Witness) Run() {
 		height = latestWitness.Height
 		w.cexAssets = w.GetCexAssets(latestWitness)
 	}
-	batchNumber := (w.totalOpsNumber + utils.BatchCreateUserOpsCounts - 1) / utils.BatchCreateUserOpsCounts
+	batchNumber := w.GetBatchNumber()
 	if height == int64(batchNumber)-1 {
 		fmt.Println("already generate all accounts witness")
 		return
@@ -103,21 +109,15 @@ func (w *Witness) Run() {
 		fmt.Println("normal starting...")
 	}
 
-	paddingAccountCounts := batchNumber*utils.BatchCreateUserOpsCounts - w.totalOpsNumber
-	for i := uint32(0); i < paddingAccountCounts; i++ {
-		emptyAccount := utils.AccountInfo{
-			AccountIndex: i + w.totalOpsNumber,
-			TotalEquity:  new(big.Int).SetInt64(0),
-			TotalDebt:    new(big.Int).SetInt64(0),
-			Assets:       make([]utils.AccountAsset, 0),
-		}
-		w.ops = append(w.ops, emptyAccount)
-	}
+	w.PaddingAccounts()
 
 	poseidonHasher := poseidon.NewPoseidon()
 	go w.WriteBatchWitnessToDB()
-	for i := 0; i < utils.BatchCreateUserOpsCounts; i++ {
-		w.accountHashChan[i] = make(chan []byte, 1)
+	for k := range w.ops {
+		w.accountHashChan[k] = make([]chan []byte, utils.BatchCreateUserOpsCountsTiers[k])
+		for p := 0; p < utils.BatchCreateUserOpsCountsTiers[k]; p++ {
+			w.accountHashChan[k][p] = make(chan []byte, 1)
+		}
 	}
 
 	cpuCores := runtime.NumCPU()
@@ -125,80 +125,104 @@ func (w *Witness) Run() {
 	if cpuCores > 2 {
 		workersNum = cpuCores - 2
 	}
-	averageCount := int64(utils.BatchCreateUserOpsCounts/workersNum + 1)
-	for i := int64(0); i < int64(workersNum); i++ {
-		go func(index int64) {
-			for j := height + 1; j < int64(batchNumber); j++ {
-				if index*averageCount >= utils.BatchCreateUserOpsCounts {
-					break
+
+	userOpsPerBatch := 0
+	startBatchNum := 0
+	recoveredBatchNum := int(height)
+	for p, k := range w.batchNumberMappingKeys {
+		var wg sync.WaitGroup
+		endBatchNum := w.batchNumberMappingValues[p]
+		userOpsPerBatch = utils.BatchCreateUserOpsCountsTiers[k]
+		averageCount := userOpsPerBatch/workersNum + 1
+		for i := 0; i < workersNum; i++ {
+			wg.Add(1)
+			go func(index int) {
+				defer wg.Done()
+				for j := startBatchNum; j < endBatchNum; j++ {
+					if j <= recoveredBatchNum {
+						continue
+					}
+					if index*averageCount >= userOpsPerBatch {
+						break
+					}
+					lowAccountIndex := index*averageCount + (j-startBatchNum)*userOpsPerBatch
+					highAccountIndex := averageCount + lowAccountIndex
+					if highAccountIndex > (j-startBatchNum+1)*userOpsPerBatch {
+						highAccountIndex = (j - startBatchNum + 1) * userOpsPerBatch
+					}
+					currentAccountIndex := (j - startBatchNum) * userOpsPerBatch
+					// fmt.Printf("worker num: %d, lowAccountInde: %d, highAccountIndex: %d, current: %d\n", index, lowAccountIndex, highAccountIndex, currentAccountIndex)
+					w.ComputeAccountHash(k, uint32(lowAccountIndex), uint32(highAccountIndex), uint32(currentAccountIndex))
 				}
-				lowAccountIndex := index*averageCount + j*utils.BatchCreateUserOpsCounts
-				highAccountIndex := averageCount + lowAccountIndex
-				if highAccountIndex > (j+1)*utils.BatchCreateUserOpsCounts {
-					highAccountIndex = (j + 1) * utils.BatchCreateUserOpsCounts
-				}
-				currentAccountIndex := j * utils.BatchCreateUserOpsCounts
-				// fmt.Printf("worker num: %d, lowAccountInde: %d, highAccountIndex: %d, current: %d\n", index, lowAccountIndex, highAccountIndex, currentAccountIndex)
-				w.ComputeAccountHash(uint32(lowAccountIndex), uint32(highAccountIndex), uint32(currentAccountIndex))
+			}(i)
+		}
+		for i := startBatchNum; i < endBatchNum; i++ {
+			if i <= recoveredBatchNum {
+				continue
 			}
-		}(i)
+			batchCreateUserWit := &utils.BatchCreateUserWitness{
+				BeforeAccountTreeRoot: w.accountTree.Root(),
+				BeforeCexAssets:       make([]utils.CexAssetInfo, utils.AssetCounts),
+				CreateUserOps:         make([]utils.CreateUserOperation, userOpsPerBatch),
+			}
+
+			copy(batchCreateUserWit.BeforeCexAssets[:], w.cexAssets[:])
+			for j := 0; j < len(w.cexAssets); j++ {
+				commitments := utils.ConvertAssetInfoToBytes(w.cexAssets[j])
+				for p := 0; p < len(commitments); p++ {
+					poseidonHasher.Write(commitments[p])
+				}
+			}
+			batchCreateUserWit.BeforeCEXAssetsCommitment = poseidonHasher.Sum(nil)
+			poseidonHasher.Reset()
+
+			relativeBatchNum := i - startBatchNum
+			for j := relativeBatchNum * userOpsPerBatch; j < (relativeBatchNum+1)*userOpsPerBatch; j++ {
+				w.ExecuteBatchCreateUser(k, uint32(j), uint32(relativeBatchNum*userOpsPerBatch), batchCreateUserWit)
+			}
+			for j := 0; j < len(w.cexAssets); j++ {
+				commitments := utils.ConvertAssetInfoToBytes(w.cexAssets[j])
+				for p := 0; p < len(commitments); p++ {
+					poseidonHasher.Write(commitments[p])
+				}
+			}
+			batchCreateUserWit.AfterCEXAssetsCommitment = poseidonHasher.Sum(nil)
+			poseidonHasher.Reset()
+			batchCreateUserWit.AfterAccountTreeRoot = w.accountTree.Root()
+
+			// compute batch commitment
+			batchCreateUserWit.BatchCommitment = poseidon.PoseidonBytes(batchCreateUserWit.BeforeAccountTreeRoot,
+				batchCreateUserWit.AfterAccountTreeRoot,
+				batchCreateUserWit.BeforeCEXAssetsCommitment,
+				batchCreateUserWit.AfterCEXAssetsCommitment)
+			// bz, err := json.Marshal(batchCreateUserWit)
+			var serializeBuf bytes.Buffer
+			enc := gob.NewEncoder(&serializeBuf)
+			err := enc.Encode(batchCreateUserWit)
+			if err != nil {
+				panic(err.Error())
+			}
+			witness := BatchWitness{
+				Height:      int64(i),
+				WitnessData: base64.StdEncoding.EncodeToString(serializeBuf.Bytes()),
+				Status:      StatusPublished,
+			}
+			accPrunedVersion := bsmt.Version(atomic.LoadInt64(&w.currentBatchNumber) + 1)
+			ver, err := w.accountTree.Commit(&accPrunedVersion)
+			if err != nil {
+				fmt.Println("ver is ", ver)
+				panic(err.Error())
+			}
+			// fmt.Printf("ver is %d account tree root is %x\n", ver, w.accountTree.Root())
+			w.ch <- witness
+		}
+		wg.Wait()
+		startBatchNum = endBatchNum
 	}
 
-	for i := height + 1; i < int64(batchNumber); i++ {
-		batchCreateUserWit := &utils.BatchCreateUserWitness{
-			BeforeAccountTreeRoot: w.accountTree.Root(),
-			BeforeCexAssets:       make([]utils.CexAssetInfo, utils.AssetCounts),
-			CreateUserOps:         make([]utils.CreateUserOperation, utils.BatchCreateUserOpsCounts),
-		}
-
-		copy(batchCreateUserWit.BeforeCexAssets[:], w.cexAssets[:])
-		for j := 0; j < len(w.cexAssets); j++ {
-			commitment := utils.ConvertAssetInfoToBytes(w.cexAssets[j])
-			poseidonHasher.Write(commitment)
-		}
-		batchCreateUserWit.BeforeCEXAssetsCommitment = poseidonHasher.Sum(nil)
-		poseidonHasher.Reset()
-
-		for j := i * utils.BatchCreateUserOpsCounts; j < (i+1)*utils.BatchCreateUserOpsCounts; j++ {
-			w.ExecuteBatchCreateUser(uint32(j), uint32(i), batchCreateUserWit)
-		}
-		for j := 0; j < len(w.cexAssets); j++ {
-			commitment := utils.ConvertAssetInfoToBytes(w.cexAssets[j])
-			poseidonHasher.Write(commitment)
-		}
-		batchCreateUserWit.AfterCEXAssetsCommitment = poseidonHasher.Sum(nil)
-		poseidonHasher.Reset()
-		batchCreateUserWit.AfterAccountTreeRoot = w.accountTree.Root()
-
-		// compute batch commitment
-		batchCreateUserWit.BatchCommitment = poseidon.PoseidonBytes(batchCreateUserWit.BeforeAccountTreeRoot,
-			batchCreateUserWit.AfterAccountTreeRoot,
-			batchCreateUserWit.BeforeCEXAssetsCommitment,
-			batchCreateUserWit.AfterCEXAssetsCommitment)
-		// bz, err := json.Marshal(batchCreateUserWit)
-		var serializeBuf bytes.Buffer
-		enc := gob.NewEncoder(&serializeBuf)
-		err := enc.Encode(batchCreateUserWit)
-		if err != nil {
-			panic(err.Error())
-		}
-		witness := BatchWitness{
-			Height:      int64(i),
-			WitnessData: base64.StdEncoding.EncodeToString(serializeBuf.Bytes()),
-			Status:      StatusPublished,
-		}
-		accPrunedVersion := bsmt.Version(atomic.LoadInt64(&w.currentBatchNumber) + 1)
-		ver, err := w.accountTree.Commit(&accPrunedVersion)
-		if err != nil {
-			fmt.Println("ver is ", ver)
-			panic(err.Error())
-		}
-		// fmt.Printf("ver is %d account tree root is %x\n", ver, w.accountTree.Root())
-		w.ch <- witness
-	}
 	close(w.ch)
 	<-w.quit
-	fmt.Println("cex assets info is ", w.cexAssets)
+	// fmt.Println("cex assets info is ", w.cexAssets)
 	fmt.Printf("witness run finished, the account tree root is %x\n", w.accountTree.Root())
 }
 
@@ -228,16 +252,16 @@ func (w *Witness) WriteBatchWitnessToDB() {
 	w.quit <- 0
 }
 
-func (w *Witness) ComputeAccountHash(accountIndex uint32, highAccountIndex uint32, currentIndex uint32) {
+func (w *Witness) ComputeAccountHash(key int, accountIndex uint32, highAccountIndex uint32, currentIndex uint32) {
 	poseidonHasher := poseidon.NewPoseidon()
 	for i := accountIndex; i < highAccountIndex; i++ {
-		w.accountHashChan[i-currentIndex] <- utils.AccountInfoToHash(&w.ops[i], &poseidonHasher)
+		w.accountHashChan[key][i-currentIndex] <- utils.AccountInfoToHash(&w.ops[key][i], &poseidonHasher)
 	}
 }
 
-func (w *Witness) ExecuteBatchCreateUser(accountIndex uint32, currentNumber uint32, batchCreateUserWit *utils.BatchCreateUserWitness) {
-	index := accountIndex - currentNumber*utils.BatchCreateUserOpsCounts
-	account := w.ops[accountIndex]
+func (w *Witness) ExecuteBatchCreateUser(assetKey int, accountIndex uint32, currentAccountIndex uint32, batchCreateUserWit *utils.BatchCreateUserWitness) {
+	index := accountIndex - currentAccountIndex
+	account := w.ops[assetKey][accountIndex]
 	batchCreateUserWit.CreateUserOps[index].BeforeAccountTreeRoot = w.accountTree.Root()
 	accountProof, err := w.accountTree.GetProof(uint64(account.AccountIndex))
 	if err != nil {
@@ -248,9 +272,12 @@ func (w *Witness) ExecuteBatchCreateUser(accountIndex uint32, currentNumber uint
 		// update cexAssetInfo
 		w.cexAssets[account.Assets[p].Index].TotalEquity = utils.SafeAdd(w.cexAssets[account.Assets[p].Index].TotalEquity, account.Assets[p].Equity)
 		w.cexAssets[account.Assets[p].Index].TotalDebt = utils.SafeAdd(w.cexAssets[account.Assets[p].Index].TotalDebt, account.Assets[p].Debt)
+		w.cexAssets[account.Assets[p].Index].LoanCollateral = utils.SafeAdd(w.cexAssets[account.Assets[p].Index].LoanCollateral, account.Assets[p].Loan)
+		w.cexAssets[account.Assets[p].Index].MarginCollateral = utils.SafeAdd(w.cexAssets[account.Assets[p].Index].MarginCollateral, account.Assets[p].Margin)
+		w.cexAssets[account.Assets[p].Index].PortfolioMarginCollateral = utils.SafeAdd(w.cexAssets[account.Assets[p].Index].PortfolioMarginCollateral, account.Assets[p].PortfolioMargin)
 	}
 	// update account tree
-	accountHash := <-w.accountHashChan[index]
+	accountHash := <-w.accountHashChan[assetKey][index]
 	err = w.accountTree.Set(uint64(account.AccountIndex), accountHash)
 	// fmt.Printf("account index %d, hash: %x\n", account.AccountIndex, accountHash)
 	if err != nil {
@@ -260,4 +287,33 @@ func (w *Witness) ExecuteBatchCreateUser(accountIndex uint32, currentNumber uint
 	batchCreateUserWit.CreateUserOps[index].AccountIndex = account.AccountIndex
 	batchCreateUserWit.CreateUserOps[index].AccountIdHash = account.AccountId
 	batchCreateUserWit.CreateUserOps[index].Assets = account.Assets
+}
+
+func (w *Witness) GetBatchNumber() int {
+	b := 0
+	keys := make([]int, 0)
+	for k := range w.ops {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
+	w.batchNumberMappingKeys = keys
+	w.batchNumberMappingValues = make([]int, len(keys))
+	for i, k := range keys {
+		opsPerBatch := utils.BatchCreateUserOpsCountsTiers[k]
+		b += (len(w.ops[k]) + opsPerBatch - 1) / opsPerBatch
+		w.batchNumberMappingValues[i] = b
+	}
+	return b
+}
+
+func (w *Witness) PaddingAccounts() {
+	keys := make([]int, 0)
+	for k := range w.ops {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
+	paddingStartIndex := int(w.totalOpsNumber)
+	for _, k := range keys {
+		paddingStartIndex, w.ops[k] = utils.PaddingAccounts(w.ops[k], k, paddingStartIndex)
+	}
 }

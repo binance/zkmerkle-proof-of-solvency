@@ -33,6 +33,7 @@ type (
 		CexAssetListCommitments string
 		AccountTreeRoots        string
 		BatchCommitment         string
+		AssetsCount				int
 		BatchNumber             int64 `gorm:"index:idx_number,unique"`
 	}
 )

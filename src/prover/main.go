@@ -20,6 +20,9 @@ func main() {
 	if err != nil {
 		panic(err.Error())
 	}
+	if len(proverConfig.AssetsCountTiers) != len(proverConfig.ZkKeyName) {
+		panic("asset tiers and asset tier names should have the same length")
+	}
 	remotePasswdConfig := flag.String("remote_password_config", "", "fetch password from aws secretsmanager")
 	rerun := flag.Bool("rerun", false, "flag which indicates rerun proof generation")
 	flag.Parse()
