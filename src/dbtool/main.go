@@ -15,7 +15,7 @@ import (
 	"github.com/binance/zkmerkle-proof-of-solvency/src/userproof/model"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/utils"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/witness/witness"
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -39,6 +39,7 @@ func main() {
 	queryCexAssetsConfig := flag.Bool("query_cex_assets", false, "query cex assets info")
 	queryWitnessData := flag.Int("query_witness_data", -1, "query witness data by height")
 	queryAccountData := flag.Int("query_account_data", -1, "query account data by index")
+	pushTaskToRedis := flag.Bool("push_task_to_redis", false, "push task to redis")
 
 	flag.Parse()
 
@@ -87,6 +88,14 @@ func main() {
 			panic(err.Error())
 		}
 		fmt.Println("drop userproof table successfully")
+
+		// clear redis data
+		client := redis.NewClient(&redis.Options{
+			Addr:            dbtoolConfig.Redis.Host,
+			Password:        dbtoolConfig.Redis.Password,
+		})
+		client.FlushAll(context.Background())
+		fmt.Println("redis data drop successfully")
 	}
 
 	if *deleteAllData || *onlyFlushKvrocks {
@@ -100,7 +109,6 @@ func main() {
 			ReadTimeout:     10 * time.Second,
 			WriteTimeout:    10 * time.Second,
 			PoolTimeout:     15 * time.Second,
-			IdleTimeout:     5 * time.Minute,
 		})
 		client.FlushAll(context.Background())
 		fmt.Println("kvrocks data drop successfully")
@@ -183,5 +191,47 @@ func main() {
 			panic(err.Error())
 		}
 		fmt.Println(u.Config)
+	}
+
+	if *pushTaskToRedis {
+		db, err := gorm.Open(mysql.Open(dbtoolConfig.MysqlDataSource), &gorm.Config{
+			Logger: newLogger,
+		})
+		if err != nil {
+			panic(err.Error())
+		}
+		witnessModel := witness.NewWitnessModel(db, dbtoolConfig.DbSuffix)
+		limit := 1024
+		offset := 0
+		witessStatusList := []int64{witness.StatusPublished}
+		taskQueueName := "por_batch_task_queue_" + dbtoolConfig.DbSuffix
+		ctx := context.Background()
+		redisCli := redis.NewClient(&redis.Options{
+			Addr: dbtoolConfig.Redis.Host,
+			Password: dbtoolConfig.Redis.Password,
+		})
+		for _, status := range witessStatusList {
+			offset = 0
+			for {
+				witnessHeights, err := witnessModel.GetAllBatchHeightsByStatus(status, limit, offset)
+				if err == utils.DbErrNotFound {
+					fmt.Printf("no more witness data with status %d\n", status)
+					break
+				}
+
+				redisPipe := redisCli.Pipeline()
+				for _, height := range witnessHeights {
+					redisPipe.LPush(ctx, taskQueueName, height)
+				}
+				_, err = redisPipe.Exec(ctx)
+				if err != nil {
+					panic(err.Error())
+				} else {
+					fmt.Printf("push %d task to redis, offset: %d\n", len(witnessHeights), offset)
+				}
+				offset += len(witnessHeights)
+			}
+		}
+		fmt.Println("push task to redis successfully")
 	}
 }

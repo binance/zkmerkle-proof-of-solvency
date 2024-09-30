@@ -9,4 +9,8 @@ type Config struct {
 			Addr string
 		}
 	}
+	Redis           struct {
+		Host     	string
+		Password  	string
+	}
 }
