@@ -21,6 +21,7 @@ import (
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+	"github.com/klauspost/compress/s2"
 )
 
 type Witness struct {
@@ -202,9 +203,14 @@ func (w *Witness) Run() {
 			if err != nil {
 				panic(err.Error())
 			}
+			// startTime := time.Now()
+			buf := serializeBuf.Bytes()
+			compressedBuf := s2.Encode(nil, buf)
+			// endTime := time.Now()
+			// fmt.Println("compress time is ", endTime.Sub(startTime), " len of compressed buf is ", len(buf), len(compressedBuf))
 			witness := BatchWitness{
 				Height:      int64(i),
-				WitnessData: base64.StdEncoding.EncodeToString(serializeBuf.Bytes()),
+				WitnessData: base64.StdEncoding.EncodeToString(compressedBuf),
 				Status:      StatusPublished,
 			}
 			accPrunedVersion := bsmt.Version(atomic.LoadInt64(&w.currentBatchNumber) + 1)

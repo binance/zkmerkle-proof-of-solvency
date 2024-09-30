@@ -20,19 +20,23 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/bls24-315/fr"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/poseidon"
 	"github.com/consensys/gnark/backend/groth16"
-	"github.com/consensys/gnark/constraint"
+	"github.com/consensys/gnark/backend/plonk"
 	"github.com/consensys/gnark/backend/witness"
+	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/constraint/solver"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
+	"github.com/consensys/gnark/frontend/cs/scs"
 	poseidon2 "github.com/consensys/gnark/std/hash/poseidon"
+	"github.com/consensys/gnark/test/unsafekzg"
+	"github.com/klauspost/compress/s2"
 )
 
-func ConstructR1csAndWitness() (constraint.ConstraintSystem, witness.Witness, error) {
+func ConstructR1csAndWitness(provingSystem string) (constraint.ConstraintSystem, witness.Witness, error) {
 	solver.RegisterHint(IntegerDivision)
-	targetAssetCounts := 500
+	targetAssetCounts := 30
 	totalAssetsCount := 500
-	userOpsPerBatch := 2
+	userOpsPerBatch := 1
 
 	targetCircuitAssetCounts := 0
 	for _, v := range utils.AssetCountsTiers {
@@ -43,7 +47,15 @@ func ConstructR1csAndWitness() (constraint.ConstraintSystem, witness.Witness, er
 	}
 	emptyUserCircuit := NewBatchCreateUserCircuit(uint32(targetCircuitAssetCounts), uint32(totalAssetsCount), uint32(userOpsPerBatch))
 	s := time.Now()
-	oR1cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, emptyUserCircuit, frontend.IgnoreUnconstrainedInputs())
+	var builder frontend.NewBuilder
+	if provingSystem == "plonk" {
+		builder = scs.NewBuilder
+	} else if provingSystem == "groth16" {
+		builder = r1cs.NewBuilder
+	} else {
+		return nil, nil, fmt.Errorf("invalid proving system")
+	}
+	oR1cs, err := frontend.Compile(ecc.BN254.ScalarField(), builder, emptyUserCircuit, frontend.IgnoreUnconstrainedInputs())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -61,7 +73,7 @@ func ConstructR1csAndWitness() (constraint.ConstraintSystem, witness.Witness, er
 }
 
 func TestBatchCreateUserCircuit(t *testing.T) {
-	oR1cs, witness, err := ConstructR1csAndWitness()
+	oR1cs, witness, err := ConstructR1csAndWitness("groth16")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +84,7 @@ func TestBatchCreateUserCircuit(t *testing.T) {
 }
 
 func TestBatchCreateUserCircuitFromKeySetup(t *testing.T) {
-	oR1cs, witness, err := ConstructR1csAndWitness()
+	oR1cs, witness, err := ConstructR1csAndWitness("groth16")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,8 +115,44 @@ func TestBatchCreateUserCircuitFromKeySetup(t *testing.T) {
 	}
 }
 
+func TestBatchCreateUserCircuitFromPlonkKeySetup(t *testing.T) {
+	oScs, witness, err := ConstructR1csAndWitness("plonk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srs, srsLang, err := unsafekzg.NewSRS(oScs)
+	if err != nil {
+		panic(err)
+	}
+	pk, vk, err := plonk.Setup(oScs, srs, srsLang)
+	if err != nil {
+		panic(err)
+	}
+	publicWitness, err := witness.Public()
+	if err != nil {
+		panic(err)
+	} else {
+		fmt.Println("public witness")
+	}
+	startTime := time.Now()
+	proof, err := plonk.Prove(oScs, pk, witness)
+	if err != nil {
+		panic(err)
+	} else {
+		fmt.Println("proof")
+	}
+	endTime := time.Now()
+	fmt.Println("prove time is ", endTime.Sub(startTime))
+	err = plonk.Verify(proof, vk, publicWitness)
+	if err != nil {
+		panic(err)
+	} else {
+		fmt.Println("verify")
+	}
+}
+
 func TestBatchCreateUserCircuitFromKeyFiles(t *testing.T) {
-	oR1cs, witness, err := ConstructR1csAndWitness()
+	oR1cs, witness, err := ConstructR1csAndWitness("groth16")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -367,7 +415,9 @@ func ConstructValidBatch(assetsCount int, totalAssetsCount int, userOpsPerBatch 
 	if err != nil {
 		panic(err.Error())
 	}
-	witnessDataStr := base64.StdEncoding.EncodeToString(serializeBuf.Bytes())
+	buf := serializeBuf.Bytes()
+	compressedBuf := s2.Encode(nil, buf)
+	witnessDataStr := base64.StdEncoding.EncodeToString(compressedBuf)
 	witnessForCircuit := utils.DecodeBatchWitness(witnessDataStr)
 	circuitWitness, _ := SetBatchCreateUserCircuitWitness(witnessForCircuit)
 	return circuitWitness

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"math/rand"
 	"runtime"
 	"time"
 
@@ -21,22 +20,13 @@ import (
 	"github.com/consensys/gnark/constraint/solver"
 	"github.com/consensys/gnark/frontend"
 
-	"github.com/zeromicro/go-zero/core/stores/redis"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
 
-func WithRedis(redisType string, redisPass string) redis.Option {
-	return func(p *redis.Redis) {
-		p.Type = redisType
-		p.Pass = redisPass
-	}
-}
-
 type Prover struct {
 	witnessModel witness.WitnessModel
 	proofModel   ProofModel
-	redisConn    *redis.Redis
 
 	VerifyingKey groth16.VerifyingKey
 	ProvingKey   groth16.ProvingKey
@@ -45,21 +35,25 @@ type Prover struct {
 	R1cs          constraint.ConstraintSystem
 
 	CurrentSnarkParamsInUse int
+	BatchCount			    int
 }
 
 func NewProver(config *config.Config) *Prover {
-	redisConn := redis.New(config.Redis.Host, WithRedis(config.Redis.Type, config.Redis.Password))
 	db, err := gorm.Open(mysql.Open(config.MysqlDataSource))
 	if err != nil {
 		panic(err.Error())
 	}
+	batchCount := 5
+	if config.BatchCount != 0 {
+		batchCount = config.BatchCount
+	}
 	prover := Prover{
 		witnessModel: witness.NewWitnessModel(db, config.DbSuffix),
 		proofModel:   NewProofModel(db, config.DbSuffix),
-		redisConn:    redisConn,
 		SessionName:  config.ZkKeyName,
 		AssetsCountTiers:  config.AssetsCountTiers,
 		CurrentSnarkParamsInUse: 0,
+		BatchCount: batchCount,
 	}
 
 	// std.RegisterHints()
@@ -68,64 +62,32 @@ func NewProver(config *config.Config) *Prover {
 }
 
 func (p *Prover) Run(flag bool) {
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	p.proofModel.CreateProofTable()
-	batchWitnessFetch := func() (*witness.BatchWitness, error) {
-		lock := utils.GetRedisLockByKey(p.redisConn, utils.RedisLockKey)
-		err := utils.TryAcquireLock(lock)
-		if err != nil {
-			return nil, utils.GetRedisLockFailed
-		}
-		//nolint:errcheck
-		defer lock.Release()
+	batchWitnessFetch := func() ([]*witness.BatchWitness, error) {
 
 		// Fetch unproved block witness.
-		blockWitness, err := p.witnessModel.GetLatestBatchWitnessByStatus(witness.StatusPublished)
+		blockWitnesses, err := p.witnessModel.GetAndUpdateBatchesWitnessByStatus(witness.StatusPublished, witness.StatusReceived, int32(p.BatchCount))
 		if err != nil {
 			return nil, err
 		}
-		// Update status of block witness.
-		err = p.witnessModel.UpdateBatchWitnessStatus(blockWitness, witness.StatusReceived)
-		if err != nil {
-			return nil, err
-		}
-		return blockWitness, nil
+		return blockWitnesses, nil
 	}
 
-	batchWitnessFetchForRerun := func() (*witness.BatchWitness, error) {
+	batchWitnessFetchForRerun := func() ([]*witness.BatchWitness, error) {
 		blockWitness, err := p.witnessModel.GetLatestBatchWitnessByStatus(witness.StatusReceived)
 		if err != nil {
 			return nil, err
 		}
-		return blockWitness, nil
+		blockWitnesses := make([]*witness.BatchWitness, 1)
+		blockWitnesses[0] = blockWitness
+		return blockWitnesses, nil
 	}
 
 	for {
-		var batchWitness *witness.BatchWitness
+		var batchWitnesses []*witness.BatchWitness
 		var err error
 		if !flag {
-			const maxRetries = 10
-			maxDelay := 30 * time.Second
-			initialDelay := 100 * time.Millisecond
-			for attempt := 0; attempt < maxRetries; attempt++ {
-				batchWitness, err = batchWitnessFetch()
-				if err == nil {
-					break
-				}
-				maxJitter := 200 * time.Millisecond
-				jitter := time.Duration(rng.Float64() * float64(maxJitter))
-				sleepTime := initialDelay + jitter
-				if sleepTime > maxDelay {
-					sleepTime = maxDelay
-				}
-				fmt.Println("sleepTime: ", sleepTime.String())
-				time.Sleep(sleepTime)
-				initialDelay *= 2
-			}
-			if errors.Is(err, utils.GetRedisLockFailed) {
-				fmt.Println("get redis lock failed")
-				continue
-			}
+			batchWitnesses, err = batchWitnessFetch()
 			if errors.Is(err, utils.DbErrNotFound) {
 				fmt.Println("there is no published status witness in db, so quit")
 				fmt.Println("prover run finish...")
@@ -133,10 +95,11 @@ func (p *Prover) Run(flag bool) {
 			}
 			if err != nil {
 				fmt.Println("get batch witness failed: ", err.Error())
-				return
+				time.Sleep(10 * time.Second)
+				continue
 			}
 		} else {
-			batchWitness, err = batchWitnessFetchForRerun()
+			batchWitnesses, err = batchWitnessFetchForRerun()
 			if errors.Is(err, utils.DbErrNotFound) {
 				fmt.Println("there is no received status witness in db, so quit")
 				fmt.Println("prover rerun finish...")
@@ -148,69 +111,71 @@ func (p *Prover) Run(flag bool) {
 			}
 		}
 
-		witnessForCircuit := utils.DecodeBatchWitness(batchWitness.WitnessData)
-		cexAssetListCommitments := make([][]byte, 2)
-		cexAssetListCommitments[0] = witnessForCircuit.BeforeCEXAssetsCommitment
-		cexAssetListCommitments[1] = witnessForCircuit.AfterCEXAssetsCommitment
-		accountTreeRoots := make([][]byte, 2)
-		accountTreeRoots[0] = witnessForCircuit.BeforeAccountTreeRoot
-		accountTreeRoots[1] = witnessForCircuit.AfterAccountTreeRoot
-		cexAssetListCommitmentsSerial, err := json.Marshal(cexAssetListCommitments)
-		if err != nil {
-			fmt.Println("marshal cex asset list failed: ", err.Error())
-			return
-		}
-		accountTreeRootsSerial, err := json.Marshal(accountTreeRoots)
-		if err != nil {
-			fmt.Println("marshal account tree root failed: ", err.Error())
-			return
-		}
-		proof, assetsCount, err := p.GenerateAndVerifyProof(witnessForCircuit, batchWitness.Height)
-		if err != nil {
-			fmt.Println("generate and verify proof error:", err.Error())
-			return
-		}
-		var buf bytes.Buffer
-		_, err = proof.WriteRawTo(&buf)
-		if err != nil {
-			fmt.Println("proof serialize failed")
-			return
-		}
-		proofBytes := buf.Bytes()
-		//formateProof, _ := FormatProof(proof, witnessForCircuit.BatchCommitment)
-		//proofBytes, err := json.Marshal(formateProof)
-		//if err != nil {
-		//	fmt.Println("marshal batch proof failed: ", err.Error())
-		//	return
-		//}
+		for _, batchWitness := range batchWitnesses {
+			witnessForCircuit := utils.DecodeBatchWitness(batchWitness.WitnessData)
+			cexAssetListCommitments := make([][]byte, 2)
+			cexAssetListCommitments[0] = witnessForCircuit.BeforeCEXAssetsCommitment
+			cexAssetListCommitments[1] = witnessForCircuit.AfterCEXAssetsCommitment
+			accountTreeRoots := make([][]byte, 2)
+			accountTreeRoots[0] = witnessForCircuit.BeforeAccountTreeRoot
+			accountTreeRoots[1] = witnessForCircuit.AfterAccountTreeRoot
+			cexAssetListCommitmentsSerial, err := json.Marshal(cexAssetListCommitments)
+			if err != nil {
+				fmt.Println("marshal cex asset list failed: ", err.Error())
+				return
+			}
+			accountTreeRootsSerial, err := json.Marshal(accountTreeRoots)
+			if err != nil {
+				fmt.Println("marshal account tree root failed: ", err.Error())
+				return
+			}
+			proof, assetsCount, err := p.GenerateAndVerifyProof(witnessForCircuit, batchWitness.Height)
+			if err != nil {
+				fmt.Println("generate and verify proof error:", err.Error())
+				return
+			}
+			var buf bytes.Buffer
+			_, err = proof.WriteRawTo(&buf)
+			if err != nil {
+				fmt.Println("proof serialize failed")
+				return
+			}
+			proofBytes := buf.Bytes()
+			//formateProof, _ := FormatProof(proof, witnessForCircuit.BatchCommitment)
+			//proofBytes, err := json.Marshal(formateProof)
+			//if err != nil {
+			//	fmt.Println("marshal batch proof failed: ", err.Error())
+			//	return
+			//}
 
-		// Check the existence of block proof.
-		_, err = p.proofModel.GetProofByBatchNumber(batchWitness.Height)
-		if err == nil {
-			fmt.Printf("blockProof of height %d exists\n", batchWitness.Height)
+			// Check the existence of block proof.
+			_, err = p.proofModel.GetProofByBatchNumber(batchWitness.Height)
+			if err == nil {
+				fmt.Printf("blockProof of height %d exists\n", batchWitness.Height)
+				err = p.witnessModel.UpdateBatchWitnessStatus(batchWitness, witness.StatusFinished)
+				if err != nil {
+					fmt.Println("update witness error:", err.Error())
+				}
+				continue
+			}
+
+			var row = &Proof{
+				ProofInfo:               base64.StdEncoding.EncodeToString(proofBytes),
+				BatchNumber:             batchWitness.Height,
+				CexAssetListCommitments: string(cexAssetListCommitmentsSerial),
+				AccountTreeRoots:        string(accountTreeRootsSerial),
+				BatchCommitment:         base64.StdEncoding.EncodeToString(witnessForCircuit.BatchCommitment),
+				AssetsCount:             assetsCount,
+			}
+			err = p.proofModel.CreateProof(row)
+			if err != nil {
+				fmt.Printf("create blockProof of height %d failed\n", batchWitness.Height)
+				return
+			}
 			err = p.witnessModel.UpdateBatchWitnessStatus(batchWitness, witness.StatusFinished)
 			if err != nil {
 				fmt.Println("update witness error:", err.Error())
 			}
-			continue
-		}
-
-		var row = &Proof{
-			ProofInfo:               base64.StdEncoding.EncodeToString(proofBytes),
-			BatchNumber:             batchWitness.Height,
-			CexAssetListCommitments: string(cexAssetListCommitmentsSerial),
-			AccountTreeRoots:        string(accountTreeRootsSerial),
-			BatchCommitment:         base64.StdEncoding.EncodeToString(witnessForCircuit.BatchCommitment),
-			AssetsCount:             assetsCount,
-		}
-		err = p.proofModel.CreateProof(row)
-		if err != nil {
-			fmt.Printf("create blockProof of height %d failed\n", batchWitness.Height)
-			return
-		}
-		err = p.witnessModel.UpdateBatchWitnessStatus(batchWitness, witness.StatusFinished)
-		if err != nil {
-			fmt.Println("update witness error:", err.Error())
 		}
 	}
 }

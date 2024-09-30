@@ -1,10 +1,12 @@
 package witness
 
 import (
-	"github.com/binance/zkmerkle-proof-of-solvency/src/utils"
 	"time"
 
+	"github.com/binance/zkmerkle-proof-of-solvency/src/utils"
+
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -26,6 +28,7 @@ type (
 		UpdateBatchWitnessStatus(witness *BatchWitness, status int64) error
 		GetLatestBatchWitness() (witness *BatchWitness, err error)
 		GetLatestBatchWitnessByStatus(status int64) (witness *BatchWitness, err error)
+		GetAndUpdateBatchesWitnessByStatus(beforeStatus, afterStatus int64, count int32) (witness [](*BatchWitness), err error)
 		CreateBatchWitness(witness []BatchWitness) error
 		GetRowCounts() (count []int64, err error)
 	}
@@ -95,10 +98,36 @@ func (m *defaultWitnessModel) GetLatestBatchWitnessByStatus(status int64) (witne
 	return witness, nil
 }
 
+func (m *defaultWitnessModel) GetAndUpdateBatchesWitnessByStatus(beforeStatus, afterStatus int64, count int32) (witness [](*BatchWitness), err error) {
+	
+	err = m.DB.Table(m.table).Transaction(func(tx *gorm.DB) error {
+		// dbTx := tx.Where("status = ?", beforeStatus).Limit(int(count)).Clauses(clause.Locking{Strength: "UPDATE",  Options: "SKIP LOCKED"}).Find(&witness)
+		dbTx := tx.Debug().Where("status = ?", beforeStatus).Order("height asc").Limit(int(count)).Clauses(clause.Locking{Strength: "UPDATE", }).Find(&witness)
+
+		if dbTx.Error != nil {
+			return dbTx.Error
+		} else if dbTx.RowsAffected == 0 {
+			return utils.DbErrNotFound
+		}
+
+		updateObject := make(map[string]interface{})
+		for _, w := range witness {
+			updateObject["Status"] = afterStatus
+			dbTx := tx.Debug().Where("height = ?", w.Height).Updates(&updateObject)
+
+			if dbTx.Error != nil {
+				return dbTx.Error
+			}
+		}
+		return nil
+	})
+	return witness, err
+}
+
 func (m *defaultWitnessModel) GetBatchWitnessByHeight(height int64) (witness *BatchWitness, err error) {
 	dbTx := m.DB.Table(m.table).Where("height = ?", height).Limit(1).Find(&witness)
 	if dbTx.Error != nil {
-		return nil, utils.DbErrSqlOperation
+		return nil, dbTx.Error
 	} else if dbTx.RowsAffected == 0 {
 		return nil, utils.DbErrNotFound
 	}
@@ -115,7 +144,7 @@ func (m *defaultWitnessModel) CreateBatchWitness(witness []BatchWitness) error {
 
 	dbTx := m.DB.Table(m.table).Create(witness)
 	if dbTx.Error != nil {
-		return utils.DbErrSqlOperation
+		return dbTx.Error
 	}
 	return nil
 }
@@ -127,10 +156,7 @@ func (m *defaultWitnessModel) UpdateBatchWitnessStatus(witness *BatchWitness, st
 		},
 		Status: status,
 	})
-	if dbTx.Error != nil {
-		return utils.DbErrSqlOperation
-	}
-	return nil
+	return dbTx.Error
 }
 
 func (m *defaultWitnessModel) GetRowCounts() (counts []int64, err error) {
