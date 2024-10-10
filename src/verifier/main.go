@@ -9,6 +9,9 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strconv"
+	"runtime"
+	"sync"
 
 	"github.com/binance/zkmerkle-proof-of-solvency/circuit"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/utils"
@@ -117,7 +120,6 @@ func main() {
 			proofs[tmpProofs[i].BatchNumber] = *tmpProofs[i]
 		}
 
-		batchNumber := int64(0)
 		prevCexAssetListCommitments := make([][]byte, 2)
 		prevAccountTreeRoots := make([][]byte, 2)
 		// depth-28 empty account tree root
@@ -151,101 +153,135 @@ func main() {
 		var finalCexAssetsInfoComm []byte
 		var accountTreeRoot []byte
 
-		var vk groth16.VerifyingKey
-		currentAssetCountsTier := 0
-		for i := 0; i < len(proofs); i++ {
-			if batchNumber != proofs[i].BatchNumber {
-				panic("the batch number is not monotonically increasing by 1")
-			}
-			// first deserialize proof
-			proof := groth16.NewProof(ecc.BN254)
-			var bufRaw bytes.Buffer
-			proofRaw, err := base64.StdEncoding.DecodeString(proofs[i].ZkProof)
-			if err != nil {
-				fmt.Println("decode proof failed:", batchNumber)
-				return
-			}
-			bufRaw.Write(proofRaw)
-			proof.ReadFrom(&bufRaw)
-			// deserialize cex asset list commitment and account tree root
-			cexAssetListCommitments := make([][]byte, 2)
-			accountTreeRoots := make([][]byte, 2)
-
-			for j := 0; j < len(proofs[i].CexAssetCommitment); j++ {
-				cexAssetListCommitments[j], err = base64.StdEncoding.DecodeString(proofs[i].CexAssetCommitment[j])
-				if err != nil {
-					fmt.Println("decode cex asset commitment failed")
-					panic(err.Error())
+		workersNum := 16
+		if runtime.NumCPU() > workersNum {
+			workersNum = runtime.NumCPU()
+		}
+		averageProofCount := (len(proofs) + workersNum - 1) / workersNum
+		
+		type ProofMetaData struct {
+			accountTreeRoots [][]byte
+			cexAssetListCommitments [][]byte
+		}
+		type SafeProofMap struct {
+			sync.Mutex
+			proofMap map[int]ProofMetaData
+		}
+		safeProofMap := &SafeProofMap{proofMap: make(map[int]ProofMetaData)}
+		var wg sync.WaitGroup
+		for i := 0; i < workersNum; i++ {
+			wg.Add(1)
+			go func(index int) {
+				defer wg.Done()
+				var vk groth16.VerifyingKey
+				currentAssetCountsTier := 0
+				startIndex := index * averageProofCount
+				endIndex := (index + 1) * averageProofCount
+				if endIndex > len(proofs) {
+					endIndex = len(proofs)
 				}
-			}
-			for j := 0; j < len(proofs[i].AccountTreeRoots); j++ {
-				accountTreeRoots[j], err = base64.StdEncoding.DecodeString(proofs[i].AccountTreeRoots[j])
-				if err != nil {
-					fmt.Println("decode account tree root failed")
-					panic(err.Error())
-				}
-			}
+				for j := startIndex; j < endIndex; j++ {
+					batchNumber := int(proofs[j].BatchNumber)
+					// first deserialize proof
+					proof := groth16.NewProof(ecc.BN254)
+					var bufRaw bytes.Buffer
+					proofRaw, err := base64.StdEncoding.DecodeString(proofs[j].ZkProof)
+					if err != nil {
+						fmt.Println("decode proof failed:", batchNumber)
+						panic("verify proof " + strconv.Itoa(batchNumber) + " failed")
+					}
+					bufRaw.Write(proofRaw)
+					proof.ReadFrom(&bufRaw)
+					// deserialize cex asset list commitment and account tree root
+					cexAssetListCommitments := make([][]byte, 2)
+					accountTreeRoots := make([][]byte, 2)
 
-			finalCexAssetsInfoComm = cexAssetListCommitments[1]
-			// verify the public input is correctly computed by cex asset list and account tree root
-			poseidonHasher := poseidon.NewPoseidon()
-			poseidonHasher.Write(accountTreeRoots[0])
-			poseidonHasher.Write(accountTreeRoots[1])
-			poseidonHasher.Write(cexAssetListCommitments[0])
-			poseidonHasher.Write(cexAssetListCommitments[1])
-			expectHash := poseidonHasher.Sum(nil)
-			actualHash, err := base64.StdEncoding.DecodeString(proofs[i].BatchCommitment)
-			if err != nil {
-				fmt.Println("decode batch commitment failed", batchNumber)
-				return
-			}
-			if string(expectHash) != string(actualHash) {
-				fmt.Println("public input verify failed ", batchNumber)
-				fmt.Printf("%x:%x\n", expectHash, actualHash)
-				return
-			}
-
-			if string(accountTreeRoots[0]) != string(prevAccountTreeRoots[1]) ||
-				string(cexAssetListCommitments[0]) != string(prevCexAssetListCommitments[1]) {
-				fmt.Printf("accoun tree root: %x:%x\n", accountTreeRoots[0], prevAccountTreeRoots[1])
-				fmt.Printf("cex asset list commitment: %x:%x\n", cexAssetListCommitments[0], prevCexAssetListCommitments[1])
-				fmt.Println("mismatch account tree root or cex asset list commitment:", batchNumber)
-				return
-			}
-			prevCexAssetListCommitments = cexAssetListCommitments
-			prevAccountTreeRoots = accountTreeRoots
-
-			verifyWitness := circuit.NewVerifyBatchCreateUserCircuit(actualHash)
-			vWitness, err := frontend.NewWitness(verifyWitness, ecc.BN254.ScalarField(), frontend.PublicOnly())
-			if err != nil {
-				panic(err.Error())
-			}
-			if proofs[i].AssetsCount != currentAssetCountsTier {
-				index := -1
-				for j := 0; j < len(verifierConfig.AssetsCountTiers); j++ {
-					if verifierConfig.AssetsCountTiers[j] == proofs[i].AssetsCount {
-						index = j
-						break
+					for p := 0; p < len(proofs[j].CexAssetCommitment); p++ {
+						cexAssetListCommitments[p], err = base64.StdEncoding.DecodeString(proofs[j].CexAssetCommitment[p])
+						if err != nil {
+							fmt.Println("decode cex asset commitment failed")
+							panic(err.Error())
+						}
+					}
+					for p := 0; p < len(proofs[j].AccountTreeRoots); p++ {
+						accountTreeRoots[p], err = base64.StdEncoding.DecodeString(proofs[j].AccountTreeRoots[p])
+						if err != nil {
+							fmt.Println("decode account tree root failed")
+							panic(err.Error())
+						}
+					}
+					// verify the public input is correctly computed by cex asset list and account tree root
+					poseidonHasher := poseidon.NewPoseidon()
+					poseidonHasher.Write(accountTreeRoots[0])
+					poseidonHasher.Write(accountTreeRoots[1])
+					poseidonHasher.Write(cexAssetListCommitments[0])
+					poseidonHasher.Write(cexAssetListCommitments[1])
+					expectHash := poseidonHasher.Sum(nil)
+					actualHash, err := base64.StdEncoding.DecodeString(proofs[j].BatchCommitment)
+					if err != nil {
+						fmt.Println("decode batch commitment failed", batchNumber)
+						panic("verify proof " + strconv.Itoa(batchNumber) + " failed")
+					}
+					if string(expectHash) != string(actualHash) {
+						fmt.Println("public input verify failed ", batchNumber)
+						fmt.Printf("%x:%x\n", expectHash, actualHash)
+						panic("verify proof " + strconv.Itoa(batchNumber) + " failed")
+					}
+					safeProofMap.Lock()
+					safeProofMap.proofMap[int(batchNumber)] = ProofMetaData{accountTreeRoots: accountTreeRoots, cexAssetListCommitments: cexAssetListCommitments}
+					safeProofMap.Unlock()
+					verifyWitness := circuit.NewVerifyBatchCreateUserCircuit(actualHash)
+					vWitness, err := frontend.NewWitness(verifyWitness, ecc.BN254.ScalarField(), frontend.PublicOnly())
+					if err != nil {
+						panic(err.Error())
+					}
+					if proofs[j].AssetsCount != currentAssetCountsTier {
+						index := -1
+						for p := 0; p < len(verifierConfig.AssetsCountTiers); p++ {
+							if verifierConfig.AssetsCountTiers[p] == proofs[j].AssetsCount {
+								index = p
+								break
+							}
+						}
+						if index == -1 {
+							panic("invalid asset counts tier")
+						}
+						vk, err = LoadVerifyingKey(verifierConfig.ZkKeyName[index] + ".vk")
+						if err != nil {
+							panic(err.Error())
+						}
+						currentAssetCountsTier = proofs[j].AssetsCount
+					}
+					err = groth16.Verify(proof, vk, vWitness)
+					if err != nil {
+						fmt.Println("proof verify failed:", batchNumber, err.Error())
+						return
+					} else {
+						fmt.Println("proof verify success", batchNumber)
 					}
 				}
-				if index == -1 {
-					panic("invalid asset counts tier")
-				}
-				vk, err = LoadVerifyingKey(verifierConfig.ZkKeyName[index] + ".vk")
-				if err != nil {
-					panic(err.Error())
-				}
-			}
-			err = groth16.Verify(proof, vk, vWitness)
-			if err != nil {
-				fmt.Println("proof verify failed:", batchNumber, err.Error())
-				return
-			} else {
-				fmt.Println("proof verify success", batchNumber)
-			}
-			batchNumber++
-			accountTreeRoot = accountTreeRoots[1]
+
+			}(i)
 		}
+
+		wg.Wait()
+		for batchNumber := 0; batchNumber < len(proofs); batchNumber++ {
+			proofData, ok := safeProofMap.proofMap[batchNumber]
+			if !ok {
+				panic("proof data not found: " + strconv.Itoa(batchNumber))
+			}
+			if string(proofData.accountTreeRoots[0]) != string(prevAccountTreeRoots[1]) {
+				panic("account tree root not match: " + strconv.Itoa(batchNumber))
+			}
+			if string(proofData.cexAssetListCommitments[0]) != string(prevCexAssetListCommitments[1]) {
+				panic("cex asset list commitment not match: " + strconv.Itoa(batchNumber))
+			}
+			prevAccountTreeRoots = proofData.accountTreeRoots
+			prevCexAssetListCommitments = proofData.cexAssetListCommitments
+			accountTreeRoot = proofData.accountTreeRoots[1]
+			finalCexAssetsInfoComm = proofData.cexAssetListCommitments[1]
+		}
+
 		if string(finalCexAssetsInfoComm) != string(expectFinalCexAssetsInfoComm) {
 			panic("Final Cex Assets Info Not Match")
 		}

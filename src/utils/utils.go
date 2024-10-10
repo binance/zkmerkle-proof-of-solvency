@@ -19,6 +19,7 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/poseidon"
 	"github.com/shopspring/decimal"
+	"github.com/klauspost/compress/s2"
 )
 
 func ConvertTierRatiosToBytes(tiersRatio []TierRatio) [][]byte {
@@ -718,7 +719,12 @@ func DecodeBatchWitness(data string) *BatchCreateUserWitness {
 		fmt.Println("deserialize batch witness failed: ", err.Error())
 		return nil
 	}
-	unserializeBuf := bytes.NewBuffer(b)
+	uncompressedData, err := s2.Decode(nil, b)
+	if err != nil {
+		fmt.Println("uncompress batch witness failed: ", err.Error())
+		return nil
+	}
+	unserializeBuf := bytes.NewBuffer(uncompressedData)
 	dec := gob.NewDecoder(unserializeBuf)
 	err = dec.Decode(&witnessForCircuit)
 	if err != nil {

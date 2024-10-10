@@ -1,10 +1,7 @@
 {
   "MysqlDataSource" : "zkpos:zkpos@123@tcp(127.0.0.1:3306)/zkpos?parseTime=true",
-  "Redis": {
-    "Host": "127.0.0.1:6379",
-    "Type": "node"
-  },
   "DbSuffix": "0",
   "ZkKeyName": ["/server/data/.keys/zkpor10"],
-  "AssetsCountTiers": [10]
+  "AssetsCountTiers": [10],
+  "BatchCount": 5
 }

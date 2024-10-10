@@ -15,7 +15,6 @@ const (
 	AssetCounts              = 500
 	// TierCount: must be even number, the cex assets commitment will depend on the TierCount/2 parts
 	TierCount				 = 12
-	RedisLockKey             = "prover_mutex_key"
 	R1csBatchSize            = 1000000
 )
 
