@@ -2,13 +2,14 @@ package prover
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-	"math/rand"
 	"runtime"
+	"strconv"
 	"time"
 
 	"github.com/binance/zkmerkle-proof-of-solvency/circuit"
@@ -20,23 +21,16 @@ import (
 	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/constraint/solver"
 	"github.com/consensys/gnark/frontend"
+	"github.com/redis/go-redis/v9"
 
-	"github.com/zeromicro/go-zero/core/stores/redis"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
 
-func WithRedis(redisType string, redisPass string) redis.Option {
-	return func(p *redis.Redis) {
-		p.Type = redisType
-		p.Pass = redisPass
-	}
-}
-
 type Prover struct {
 	witnessModel witness.WitnessModel
 	proofModel   ProofModel
-	redisConn    *redis.Redis
+	redisCli     *redis.Client
 
 	VerifyingKey groth16.VerifyingKey
 	ProvingKey   groth16.ProvingKey
@@ -45,21 +39,29 @@ type Prover struct {
 	R1cs          constraint.ConstraintSystem
 
 	CurrentSnarkParamsInUse int
+	TaskQueueName string
 }
 
 func NewProver(config *config.Config) *Prover {
-	redisConn := redis.New(config.Redis.Host, WithRedis(config.Redis.Type, config.Redis.Password))
 	db, err := gorm.Open(mysql.Open(config.MysqlDataSource))
 	if err != nil {
 		panic(err.Error())
 	}
+	// Set up the redis client.
+	redisCli := redis.NewClient(&redis.Options{
+		Addr:    config.Redis.Host,
+		Password: config.Redis.Password,
+	})
+	taskQueueName := "por_batch_task_queue_" + config.DbSuffix
+
 	prover := Prover{
 		witnessModel: witness.NewWitnessModel(db, config.DbSuffix),
 		proofModel:   NewProofModel(db, config.DbSuffix),
-		redisConn:    redisConn,
+		redisCli:     redisCli,
 		SessionName:  config.ZkKeyName,
 		AssetsCountTiers:  config.AssetsCountTiers,
 		CurrentSnarkParamsInUse: 0,
+		TaskQueueName: taskQueueName,
 	}
 
 	// std.RegisterHints()
@@ -67,76 +69,75 @@ func NewProver(config *config.Config) *Prover {
 	return &prover
 }
 
+func (p *Prover) fetchTasksByRedis() (int, error) {
+	var ctx = context.Background()
+	batchHeightStr, err := p.redisCli.BRPop(ctx, 10*time.Second, p.TaskQueueName).Result()
+	if err != nil {
+		return -1, err
+	}
+
+	batchHeight, err := strconv.Atoi(batchHeightStr[1])
+	if err != nil {
+		return -1, err
+	}
+	return batchHeight, nil
+}
+
+func (p *Prover) FetchBatchWitness() ([]*witness.BatchWitness, error) {
+	batchHeight, err := p.fetchTasksByRedis()
+	if err != nil {
+		return nil, err
+	}
+
+	// Fetch unproved block witness.
+	blockWitnesses, err := p.witnessModel.GetAndUpdateBatchesWitnessByHeight(batchHeight, witness.StatusPublished, witness.StatusReceived)
+	if err != nil {
+		return nil, err
+	}
+	return blockWitnesses, nil
+}
+
+func (p *Prover) FetchBatchWitnessForRerun() ([]*witness.BatchWitness, error) {
+	blockWitness, err := p.witnessModel.GetLatestBatchWitnessByStatus(witness.StatusReceived)
+	if err == utils.DbErrNotFound {
+		blockWitness, err = p.witnessModel.GetLatestBatchWitnessByStatus(witness.StatusPublished)
+	}
+	if err != nil {
+		return nil, err
+	}
+	blockWitnesses := make([]*witness.BatchWitness, 1)
+	blockWitnesses[0] = blockWitness
+	return blockWitnesses, nil
+}
+
 func (p *Prover) Run(flag bool) {
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	p.proofModel.CreateProofTable()
-	batchWitnessFetch := func() (*witness.BatchWitness, error) {
-		lock := utils.GetRedisLockByKey(p.redisConn, utils.RedisLockKey)
-		err := utils.TryAcquireLock(lock)
-		if err != nil {
-			return nil, utils.GetRedisLockFailed
-		}
-		//nolint:errcheck
-		defer lock.Release()
-
-		// Fetch unproved block witness.
-		blockWitness, err := p.witnessModel.GetLatestBatchWitnessByStatus(witness.StatusPublished)
-		if err != nil {
-			return nil, err
-		}
-		// Update status of block witness.
-		err = p.witnessModel.UpdateBatchWitnessStatus(blockWitness, witness.StatusReceived)
-		if err != nil {
-			return nil, err
-		}
-		return blockWitness, nil
-	}
-
-	batchWitnessFetchForRerun := func() (*witness.BatchWitness, error) {
-		blockWitness, err := p.witnessModel.GetLatestBatchWitnessByStatus(witness.StatusReceived)
-		if err != nil {
-			return nil, err
-		}
-		return blockWitness, nil
-	}
-
 	for {
-		var batchWitness *witness.BatchWitness
+		var batchWitnesses []*witness.BatchWitness
 		var err error
 		if !flag {
-			const maxRetries = 10
-			maxDelay := 30 * time.Second
-			initialDelay := 100 * time.Millisecond
-			for attempt := 0; attempt < maxRetries; attempt++ {
-				batchWitness, err = batchWitnessFetch()
-				if err == nil {
-					break
-				}
-				maxJitter := 200 * time.Millisecond
-				jitter := time.Duration(rng.Float64() * float64(maxJitter))
-				sleepTime := initialDelay + jitter
-				if sleepTime > maxDelay {
-					sleepTime = maxDelay
-				}
-				fmt.Println("sleepTime: ", sleepTime.String())
-				time.Sleep(sleepTime)
-				initialDelay *= 2
-			}
-			if errors.Is(err, utils.GetRedisLockFailed) {
-				fmt.Println("get redis lock failed")
-				continue
-			}
+			// when the task is removed from redis queue,
+			// 1. if prover crash before updating witness status to pending, or
+			// 2. if prover crash before generating proof,
+			// then the offline rerun mechanism will be triggered to handle this situation.
+			batchWitnesses, err = p.FetchBatchWitness()
 			if errors.Is(err, utils.DbErrNotFound) {
 				fmt.Println("there is no published status witness in db, so quit")
 				fmt.Println("prover run finish...")
 				return
 			}
-			if err != nil {
-				fmt.Println("get batch witness failed: ", err.Error())
+			if errors.Is(err, redis.Nil) {
+				fmt.Println("There is no task left in task queue")
+				fmt.Println("prover run finish...")
 				return
 			}
+			if err != nil {
+				fmt.Println("get batch witness failed: ", err.Error())
+				time.Sleep(10 * time.Second)
+				continue
+			}
 		} else {
-			batchWitness, err = batchWitnessFetchForRerun()
+			batchWitnesses, err = p.FetchBatchWitnessForRerun()
 			if errors.Is(err, utils.DbErrNotFound) {
 				fmt.Println("there is no received status witness in db, so quit")
 				fmt.Println("prover rerun finish...")
@@ -148,69 +149,71 @@ func (p *Prover) Run(flag bool) {
 			}
 		}
 
-		witnessForCircuit := utils.DecodeBatchWitness(batchWitness.WitnessData)
-		cexAssetListCommitments := make([][]byte, 2)
-		cexAssetListCommitments[0] = witnessForCircuit.BeforeCEXAssetsCommitment
-		cexAssetListCommitments[1] = witnessForCircuit.AfterCEXAssetsCommitment
-		accountTreeRoots := make([][]byte, 2)
-		accountTreeRoots[0] = witnessForCircuit.BeforeAccountTreeRoot
-		accountTreeRoots[1] = witnessForCircuit.AfterAccountTreeRoot
-		cexAssetListCommitmentsSerial, err := json.Marshal(cexAssetListCommitments)
-		if err != nil {
-			fmt.Println("marshal cex asset list failed: ", err.Error())
-			return
-		}
-		accountTreeRootsSerial, err := json.Marshal(accountTreeRoots)
-		if err != nil {
-			fmt.Println("marshal account tree root failed: ", err.Error())
-			return
-		}
-		proof, assetsCount, err := p.GenerateAndVerifyProof(witnessForCircuit, batchWitness.Height)
-		if err != nil {
-			fmt.Println("generate and verify proof error:", err.Error())
-			return
-		}
-		var buf bytes.Buffer
-		_, err = proof.WriteRawTo(&buf)
-		if err != nil {
-			fmt.Println("proof serialize failed")
-			return
-		}
-		proofBytes := buf.Bytes()
-		//formateProof, _ := FormatProof(proof, witnessForCircuit.BatchCommitment)
-		//proofBytes, err := json.Marshal(formateProof)
-		//if err != nil {
-		//	fmt.Println("marshal batch proof failed: ", err.Error())
-		//	return
-		//}
+		for _, batchWitness := range batchWitnesses {
+			witnessForCircuit := utils.DecodeBatchWitness(batchWitness.WitnessData)
+			cexAssetListCommitments := make([][]byte, 2)
+			cexAssetListCommitments[0] = witnessForCircuit.BeforeCEXAssetsCommitment
+			cexAssetListCommitments[1] = witnessForCircuit.AfterCEXAssetsCommitment
+			accountTreeRoots := make([][]byte, 2)
+			accountTreeRoots[0] = witnessForCircuit.BeforeAccountTreeRoot
+			accountTreeRoots[1] = witnessForCircuit.AfterAccountTreeRoot
+			cexAssetListCommitmentsSerial, err := json.Marshal(cexAssetListCommitments)
+			if err != nil {
+				fmt.Println("marshal cex asset list failed: ", err.Error())
+				return
+			}
+			accountTreeRootsSerial, err := json.Marshal(accountTreeRoots)
+			if err != nil {
+				fmt.Println("marshal account tree root failed: ", err.Error())
+				return
+			}
+			proof, assetsCount, err := p.GenerateAndVerifyProof(witnessForCircuit, batchWitness.Height)
+			if err != nil {
+				fmt.Println("generate and verify proof error:", err.Error())
+				return
+			}
+			var buf bytes.Buffer
+			_, err = proof.WriteRawTo(&buf)
+			if err != nil {
+				fmt.Println("proof serialize failed")
+				return
+			}
+			proofBytes := buf.Bytes()
+			//formateProof, _ := FormatProof(proof, witnessForCircuit.BatchCommitment)
+			//proofBytes, err := json.Marshal(formateProof)
+			//if err != nil {
+			//	fmt.Println("marshal batch proof failed: ", err.Error())
+			//	return
+			//}
 
-		// Check the existence of block proof.
-		_, err = p.proofModel.GetProofByBatchNumber(batchWitness.Height)
-		if err == nil {
-			fmt.Printf("blockProof of height %d exists\n", batchWitness.Height)
+			// Check the existence of block proof.
+			_, err = p.proofModel.GetProofByBatchNumber(batchWitness.Height)
+			if err == nil {
+				fmt.Printf("blockProof of height %d exists\n", batchWitness.Height)
+				err = p.witnessModel.UpdateBatchWitnessStatus(batchWitness, witness.StatusFinished)
+				if err != nil {
+					fmt.Println("update witness error:", err.Error())
+				}
+				continue
+			}
+
+			var row = &Proof{
+				ProofInfo:               base64.StdEncoding.EncodeToString(proofBytes),
+				BatchNumber:             batchWitness.Height,
+				CexAssetListCommitments: string(cexAssetListCommitmentsSerial),
+				AccountTreeRoots:        string(accountTreeRootsSerial),
+				BatchCommitment:         base64.StdEncoding.EncodeToString(witnessForCircuit.BatchCommitment),
+				AssetsCount:             assetsCount,
+			}
+			err = p.proofModel.CreateProof(row)
+			if err != nil {
+				fmt.Printf("create blockProof of height %d failed\n", batchWitness.Height)
+				return
+			}
 			err = p.witnessModel.UpdateBatchWitnessStatus(batchWitness, witness.StatusFinished)
 			if err != nil {
 				fmt.Println("update witness error:", err.Error())
 			}
-			continue
-		}
-
-		var row = &Proof{
-			ProofInfo:               base64.StdEncoding.EncodeToString(proofBytes),
-			BatchNumber:             batchWitness.Height,
-			CexAssetListCommitments: string(cexAssetListCommitmentsSerial),
-			AccountTreeRoots:        string(accountTreeRootsSerial),
-			BatchCommitment:         base64.StdEncoding.EncodeToString(witnessForCircuit.BatchCommitment),
-			AssetsCount:             assetsCount,
-		}
-		err = p.proofModel.CreateProof(row)
-		if err != nil {
-			fmt.Printf("create blockProof of height %d failed\n", batchWitness.Height)
-			return
-		}
-		err = p.witnessModel.UpdateBatchWitnessStatus(batchWitness, witness.StatusFinished)
-		if err != nil {
-			fmt.Println("update witness error:", err.Error())
 		}
 	}
 }

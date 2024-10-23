@@ -4,9 +4,8 @@ type Config struct {
 	MysqlDataSource string
 	DbSuffix        string
 	Redis           struct {
-		Host     string
-		Type     string
-		Password string
+		Host     	string
+		Password  	string
 	}
 	ZkKeyName []string
 	AssetsCountTiers []int
