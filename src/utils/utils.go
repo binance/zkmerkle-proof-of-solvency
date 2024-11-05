@@ -421,6 +421,9 @@ func ParseTiersRatioFromStr(tiersRatioEnc string) ([TierCount]TierRatio, error) 
 			BoundaryValue: boundaryValueBigInt,
 			Ratio:         uint8(ratio),
 		})
+		if i > 0 && tiersRatio[i].BoundaryValue.Cmp(tiersRatio[i-1].BoundaryValue) <= 0 {
+			return PaddingTierRatios([]TierRatio{}), errors.New("tiers boundry value data wrong")
+		}
 	}
 	CalculatePrecomputedValue(tiersRatio)
 	return PaddingTierRatios(tiersRatio), nil

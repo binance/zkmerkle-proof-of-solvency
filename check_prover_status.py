@@ -21,24 +21,24 @@ def rerun():
 if __name__ == "__main__":
     os.chdir("src/dbtool")
     prev_delta = get_delta()
-    print("prev_delta ", prev_delta)
+    print("prev_delta ", prev_delta, flush=True)
     while True:
         time.sleep(60)
         cur_delta = get_delta()
-        print("cur_delta ", cur_delta)
+        print("cur_delta ", cur_delta, flush=True)
         if prev_delta != cur_delta or prev_delta == 0:
             break
 
     rerun_retry = 0
     while True:
-        time.sleep(5*60)
+        time.sleep(8*60)
         cur_delta = get_delta()
         if prev_delta == 0 or cur_delta == 0:
-            print("all proofs has been generated")
+            print("all proofs has been generated", flush=True)
             break
         if cur_delta == prev_delta:
-            print("there is no new proof generate in 2 minutes, it means all prover finished running")
-            print("there are ", cur_delta, " proofs need to rerun")
+            print("there is no new proof generate in 8 minutes, it means all prover finished running", flush=True)
+            print("there are ", cur_delta, " proofs need to rerun", flush=True)
             os.chdir("../prover")
             rerun()
             os.chdir("../dbtool")
@@ -47,13 +47,13 @@ if __name__ == "__main__":
                 print("rerun successfully")
                 break
             else:
-                print("after rerun, there is still ", delta, " proof, will retry...")
+                print("after rerun, there is still ", delta, " proof, will retry...", flush=True)
                 rerun_retry += 1
                 if rerun_retry > 3:
-                    print("rerun failed too many times, need manually check")
+                    print("rerun failed too many times, need manually check", flush=True)
                     exit(0)
 
-        print("current delta is ", cur_delta, " previous delta is ", prev_delta)
+        print("current delta is ", cur_delta, " previous delta is ", prev_delta, flush=True)
         prev_delta = cur_delta
 
-    print("successfully...")
+    print("successfully...", flush=True)
