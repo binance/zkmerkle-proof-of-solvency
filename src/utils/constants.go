@@ -71,6 +71,16 @@ var (
 		"1000sats": true,
         "NEIRO": true,
 		"neiro": true,
+		"1000PEPPER" : true,
+		"1000pepper" : true,
+		"NOT": true,
+		"not": true,
+		"NFT": true,
+		"nft": true,
+		"BOME": true,
+		"bome": true,
+		"1MBABYDOGE": true,
+		"1mbabydoge": true,
 	}
 	// the key is the number of assets user own
 	// the value is the number of batch create user ops
