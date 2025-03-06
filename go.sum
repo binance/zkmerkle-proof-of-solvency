@@ -428,8 +428,8 @@ github.com/blang/semver/v4 v4.0.0 h1:1PFHFE6yCCTv8C1TeyNNarDzntLi7wMI5i/pzqYIsAM
 github.com/blang/semver/v4 v4.0.0/go.mod h1:IbckMUScFkM3pff0VJDNKRiT6TG/YpiHIM2yvyW5YoQ=
 github.com/bnb-chain/gnark v0.7.2-0.20231008065852-bf4926770621 h1:axDn2UR/evNksueBbom7/TNGyDb3q/blvKJ1J1FaIZI=
 github.com/bnb-chain/gnark v0.7.2-0.20231008065852-bf4926770621/go.mod h1:fmHUzzss1n32K3COWMvrQj7uo7GjIeIr1wXzjj5gmj8=
-github.com/bnb-chain/gnark-crypto v0.8.1-0.20230412133626-30223a679fb7 h1:ME5Nif4WgGgWKH2omB6ybic5bsU22bHy43xBsgMBHgM=
-github.com/bnb-chain/gnark-crypto v0.8.1-0.20230412133626-30223a679fb7/go.mod h1:a2DQL4+5ywF6safEeZFEPGRiiGbjzGFRUN2sg06VuU4=
+github.com/bnb-chain/gnark-crypto v0.8.1-0.20230411152424-aa6a2850cf66 h1:WjCccwh8Gx5rew7BxzCclvY9C2XbNsnhCOkQCARcVqs=
+github.com/bnb-chain/gnark-crypto v0.8.1-0.20230411152424-aa6a2850cf66/go.mod h1:a2DQL4+5ywF6safEeZFEPGRiiGbjzGFRUN2sg06VuU4=
 github.com/bnb-chain/zkbnb-smt v0.0.3-0.20221227064653-7422bfd51aa0 h1:ctmwkpucisve1QBpCIgAH9hjYZGxbtyaCSh5yVM+F1s=
 github.com/bnb-chain/zkbnb-smt v0.0.3-0.20221227064653-7422bfd51aa0/go.mod h1:QmQTsv2fxBsobFLFZkaiNmr3P0M/mm3W1AiwSU3/cGY=
 github.com/cenkalti/backoff/v4 v4.1.3 h1:cFAlzYUlVYDysBEH2T5hyJZMh3+5+WCBvSnK6Q8UtC4=

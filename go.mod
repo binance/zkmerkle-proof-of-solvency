@@ -90,5 +90,5 @@ require (
 
 replace (
 	github.com/consensys/gnark => github.com/bnb-chain/gnark v0.7.2-0.20231008065852-bf4926770621
-	github.com/consensys/gnark-crypto => github.com/bnb-chain/gnark-crypto v0.8.1-0.20230412133626-30223a679fb7
+	github.com/consensys/gnark-crypto => github.com/bnb-chain/gnark-crypto v0.8.1-0.20230411152424-aa6a2850cf66
 )

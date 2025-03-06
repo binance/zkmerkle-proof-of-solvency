@@ -9,6 +9,7 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/poseidon"
 	"hash"
 	"time"
+	"fmt"
 )
 
 var (
@@ -25,7 +26,7 @@ func init() {
 	emptyAssetCommitment := ComputeUserAssetsCommitment(&poseidonHasher, emptyAssets)
 	tempHash := poseidon.Poseidon(zero, zero, zero, new(fr.Element).SetBytes(emptyAssetCommitment)).Bytes()
 	NilAccountHash = tempHash[:]
-	// fmt.Printf("NilAccountHash is %x\n", NilAccountHash)
+	fmt.Printf("NilAccountHash is %x\n", NilAccountHash)
 }
 
 func NewAccountTree(driver string, addr string) (accountTree bsmt.SparseMerkleTree, err error) {
