@@ -90,17 +90,43 @@ func (p *Prover) FetchBatchWitness() ([]*witness.BatchWitness, error) {
 	}
 
 	// Fetch unproved block witness.
-	blockWitnesses, err := p.witnessModel.GetAndUpdateBatchesWitnessByHeight(batchHeight, witness.StatusPublished, witness.StatusReceived)
-	if err != nil {
-		return nil, err
+	for {
+		blockWitnesses, err := p.witnessModel.GetAndUpdateBatchesWitnessByHeight(batchHeight, witness.StatusPublished, witness.StatusReceived)
+		if err == utils.DbErrQueryInterrupted || err == utils.DbErrQueryTimeout {
+			fmt.Println("get batch witness timeout, retry...:", err.Error())
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		return blockWitnesses, nil
 	}
-	return blockWitnesses, nil
 }
 
 func (p *Prover) FetchBatchWitnessForRerun() ([]*witness.BatchWitness, error) {
-	blockWitness, err := p.witnessModel.GetLatestBatchWitnessByStatus(witness.StatusReceived)
+	var blockWitness *witness.BatchWitness
+	var err error
+	for {
+		blockWitness, err = p.witnessModel.GetLatestBatchWitnessByStatus(witness.StatusReceived)
+		if err == utils.DbErrQueryInterrupted || err == utils.DbErrQueryTimeout {
+			fmt.Println("get latest batch witness by status timeout, retry...:", err.Error())
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		break
+	}
+
 	if err == utils.DbErrNotFound {
-		blockWitness, err = p.witnessModel.GetLatestBatchWitnessByStatus(witness.StatusPublished)
+		for {
+			blockWitness, err = p.witnessModel.GetLatestBatchWitnessByStatus(witness.StatusPublished)
+			if err == utils.DbErrQueryInterrupted || err == utils.DbErrQueryTimeout {
+				fmt.Println("get latest batch witness by status timeout, retry...:", err.Error())
+				time.Sleep(1 * time.Second)
+				continue
+			}
+			break
+		}
 	}
 	if err != nil {
 		return nil, err
@@ -179,15 +205,17 @@ func (p *Prover) Run(flag bool) {
 				return
 			}
 			proofBytes := buf.Bytes()
-			//formateProof, _ := FormatProof(proof, witnessForCircuit.BatchCommitment)
-			//proofBytes, err := json.Marshal(formateProof)
-			//if err != nil {
-			//	fmt.Println("marshal batch proof failed: ", err.Error())
-			//	return
-			//}
 
 			// Check the existence of block proof.
-			_, err = p.proofModel.GetProofByBatchNumber(batchWitness.Height)
+			for {
+				_, err = p.proofModel.GetProofByBatchNumber(batchWitness.Height)
+				if err == utils.DbErrQueryInterrupted || err == utils.DbErrQueryTimeout {
+					fmt.Println("get proof by batch number timeout, retry...:", err.Error())
+					time.Sleep(1 * time.Second)
+					continue
+				}
+				break
+			}
 			if err == nil {
 				fmt.Printf("blockProof of height %d exists\n", batchWitness.Height)
 				err = p.witnessModel.UpdateBatchWitnessStatus(batchWitness, witness.StatusFinished)

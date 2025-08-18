@@ -150,6 +150,9 @@ func main() {
 		return
 	}
 	accountTree, err := utils.NewAccountTree(userProofConfig.TreeDB.Driver, userProofConfig.TreeDB.Option.Addr)
+	if err != nil {
+		panic(err.Error())
+	}
 	accountsMap := HandleUserData(userProofConfig)
 	totalAccountCounts := 0
 	accountAssetKeys := make([]int, 0)
@@ -161,7 +164,17 @@ func main() {
 	sort.Ints(accountAssetKeys)
 	fmt.Println("total accounts num", totalAccountCounts)
 	userProofModel := OpenUserProofTable(userProofConfig)
-	currentAccountCounts, err := userProofModel.GetUserCounts()
+	var currentAccountCounts int
+	for {
+		currentAccountCounts, err = userProofModel.GetUserCounts()
+		if err == utils.DbErrQueryInterrupted || err == utils.DbErrQueryTimeout {
+			fmt.Println("get user counts timeout, retry...:", err.Error())
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		break
+	}
+
 	if err != nil && err != utils.DbErrNotFound {
 		panic(err.Error())
 	}

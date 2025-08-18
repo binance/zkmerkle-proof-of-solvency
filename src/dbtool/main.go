@@ -124,14 +124,33 @@ func main() {
 		witnessModel := witness.NewWitnessModel(db, dbtoolConfig.DbSuffix)
 		proofModel := prover.NewProofModel(db, dbtoolConfig.DbSuffix)
 
-		witnessCounts, err := witnessModel.GetRowCounts()
-		if err != nil {
-			panic(err.Error())
+		var witnessCounts []int64
+		var proofCounts int64
+		for {
+			witnessCounts, err = witnessModel.GetRowCounts()
+			if err == utils.DbErrQueryInterrupted || err == utils.DbErrQueryTimeout {
+				fmt.Println("get witness counts timeout, retry...:", err.Error())
+				time.Sleep(1 * time.Second)
+				continue
+			}
+			if err != nil {
+				panic(err.Error())
+			}
+			break
 		}
-		proofCounts, err := proofModel.GetRowCounts()
-		if err != nil {
-			proofCounts = 0
+		for {
+			proofCounts, err = proofModel.GetRowCounts()
+			if err == utils.DbErrQueryInterrupted || err == utils.DbErrQueryTimeout {
+				fmt.Println("get proof counts timeout, retry...:", err.Error())
+				time.Sleep(1 * time.Second)
+				continue
+			}
+			if err != nil {
+				panic(err.Error())
+			}
+			break
 		}
+
 		fmt.Printf("Total witness item %d, Published item %d, Pending item %d, Finished item %d\n", witnessCounts[0], witnessCounts[1], witnessCounts[2], witnessCounts[3])
 		fmt.Println(witnessCounts[0] - proofCounts)
 	}
@@ -214,6 +233,11 @@ func main() {
 			offset = 0
 			for {
 				witnessHeights, err := witnessModel.GetAllBatchHeightsByStatus(status, limit, offset)
+				if err == utils.DbErrQueryInterrupted || err == utils.DbErrQueryTimeout {
+					fmt.Println("get witness heights timeout, retry...:", err.Error())
+					time.Sleep(1 * time.Second)
+					continue
+				}
 				if err == utils.DbErrNotFound {
 					fmt.Printf("no more witness data with status %d\n", status)
 					break

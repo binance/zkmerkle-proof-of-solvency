@@ -1,13 +1,16 @@
 package utils
 
 import (
+	"fmt"
+	"hash"
+	"time"
+	"encoding/base64"
+
 	bsmt "github.com/bnb-chain/zkbnb-smt"
 	"github.com/bnb-chain/zkbnb-smt/database"
 	"github.com/bnb-chain/zkbnb-smt/database/memory"
 	"github.com/bnb-chain/zkbnb-smt/database/redis"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/poseidon"
-	"hash"
-	"time"
 )
 
 var (
@@ -63,6 +66,7 @@ func VerifyMerkleProof(root []byte, accountIndex uint32, proof [][]byte, node []
 			hasher.Write(node)
 		}
 		node = hasher.Sum(nil)
+		fmt.Println("node base64 encode is", base64.StdEncoding.EncodeToString(node))
 		hasher.Reset()
 	}
 	if string(node) != string(root) {
