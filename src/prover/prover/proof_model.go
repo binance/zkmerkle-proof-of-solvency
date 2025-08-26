@@ -18,7 +18,6 @@ type (
 		GetLatestProof() (p *Proof, err error)
 		GetLatestConfirmedProof() (p *Proof, err error)
 		GetProofByBatchNumber(height int64) (p *Proof, err error)
-		GetProofNumber() (count int64)
 		GetRowCounts() (count int64, err error)
 	}
 
@@ -69,14 +68,14 @@ func (m *defaultProofModel) CreateProof(row *Proof) error {
 }
 
 func (m *defaultProofModel) GetProofsBetween(start int64, end int64) (proofs []*Proof, err error) {
-	dbTx := m.DB.Debug().Table(m.table).Where("batch_number >= ? AND batch_number <= ?",
+	dbTx := m.DB.Clauses(utils.MaxExecutionTimeHint).Debug().Table(m.table).Where("batch_number >= ? AND batch_number <= ?",
 		start,
 		end).
 		Order("batch_number").
 		Find(&proofs)
 
 	if dbTx.Error != nil {
-		return proofs, utils.DbErrSqlOperation
+		return proofs, utils.ConvertMysqlErrToDbErr(dbTx.Error)
 	} else if dbTx.RowsAffected == 0 {
 		return nil, utils.DbErrNotFound
 	}
@@ -86,9 +85,9 @@ func (m *defaultProofModel) GetProofsBetween(start int64, end int64) (proofs []*
 
 func (m *defaultProofModel) GetLatestProof() (p *Proof, err error) {
 	var row *Proof
-	dbTx := m.DB.Table(m.table).Order("batch_number desc").Limit(1).Find(&row)
+	dbTx := m.DB.Clauses(utils.MaxExecutionTimeHint).Table(m.table).Order("batch_number desc").Limit(1).Find(&row)
 	if dbTx.Error != nil {
-		return nil, utils.DbErrSqlOperation
+		return nil, utils.ConvertMysqlErrToDbErr(dbTx.Error)
 	} else if dbTx.RowsAffected == 0 {
 		return nil, utils.DbErrNotFound
 	} else {
@@ -98,9 +97,9 @@ func (m *defaultProofModel) GetLatestProof() (p *Proof, err error) {
 
 func (m *defaultProofModel) GetLatestConfirmedProof() (p *Proof, err error) {
 	var row *Proof
-	dbTx := m.DB.Table(m.table).Order("batch_number desc").Limit(1).Find(&row)
+	dbTx := m.DB.Clauses(utils.MaxExecutionTimeHint).Table(m.table).Order("batch_number desc").Limit(1).Find(&row)
 	if dbTx.Error != nil {
-		return nil, utils.DbErrSqlOperation
+		return nil, utils.ConvertMysqlErrToDbErr(dbTx.Error)
 	} else if dbTx.RowsAffected == 0 {
 		return nil, utils.DbErrNotFound
 	} else {
@@ -110,9 +109,9 @@ func (m *defaultProofModel) GetLatestConfirmedProof() (p *Proof, err error) {
 
 func (m *defaultProofModel) GetProofByBatchNumber(num int64) (p *Proof, err error) {
 	var row *Proof
-	dbTx := m.DB.Table(m.table).Where("batch_number = ?", num).Find(&row)
+	dbTx := m.DB.Clauses(utils.MaxExecutionTimeHint).Table(m.table).Where("batch_number = ?", num).Find(&row)
 	if dbTx.Error != nil {
-		return nil, utils.DbErrSqlOperation
+		return nil, utils.ConvertMysqlErrToDbErr(dbTx.Error)
 	} else if dbTx.RowsAffected == 0 {
 		return nil, utils.DbErrNotFound
 	} else {
@@ -120,15 +119,10 @@ func (m *defaultProofModel) GetProofByBatchNumber(num int64) (p *Proof, err erro
 	}
 }
 
-func (m *defaultProofModel) GetProofNumber() (count int64) {
-	m.DB.Raw("select count(*) from " + m.table).Count(&count)
-	return count
-}
-
 func (m *defaultProofModel) GetRowCounts() (count int64, err error) {
-	dbTx := m.DB.Table(m.table).Count(&count)
+	dbTx := m.DB.Clauses(utils.MaxExecutionTimeHint).Table(m.table).Count(&count)
 	if dbTx.Error != nil {
-		return 0, dbTx.Error
+		return 0, utils.ConvertMysqlErrToDbErr(dbTx.Error)
 	}
 	return count, nil
 }

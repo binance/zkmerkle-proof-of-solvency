@@ -20,6 +20,7 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/poseidon"
 	"github.com/shopspring/decimal"
 	"github.com/klauspost/compress/s2"
+	"github.com/go-sql-driver/mysql"
 )
 
 func ConvertTierRatiosToBytes(tiersRatio []TierRatio) [][]byte {
@@ -839,4 +840,16 @@ func PaddingAccounts(accounts []AccountInfo, assetKey int, paddingStartIndex int
 		paddingStartIndex += 1
 	}
 	return paddingStartIndex, accounts
+}
+
+func ConvertMysqlErrToDbErr(err error) error {
+	if mysqlErr, ok := err.(*mysql.MySQLError); ok {
+		if mysqlErr.Number == 1317 {
+			return DbErrQueryInterrupted
+		}
+		if mysqlErr.Number == 3024 {
+			return DbErrQueryTimeout
+		}
+	}
+	return err
 }

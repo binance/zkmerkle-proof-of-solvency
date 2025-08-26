@@ -16,7 +16,7 @@ require (
 	github.com/redis/go-redis/v9 v9.6.1
 	github.com/shopspring/decimal v1.3.1
 	gorm.io/driver/mysql v1.4.7
-	gorm.io/gorm v1.24.5
+	gorm.io/gorm v1.25.0
 )
 
 require (
@@ -60,6 +60,7 @@ require (
 	golang.org/x/net v0.28.0 // indirect
 	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/sys v0.24.0 // indirect
+	gorm.io/hints v1.1.2 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
 

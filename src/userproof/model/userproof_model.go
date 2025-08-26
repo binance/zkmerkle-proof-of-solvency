@@ -77,9 +77,9 @@ func (m *defaultUserProofModel) CreateUserProofs(rows []UserProof) error {
 
 func (m *defaultUserProofModel) GetUserProofByIndex(id uint32) (userproof *UserProof, err error) {
 	userproof = &UserProof{}
-	dbTx := m.DB.Table(m.table).Where("account_index = ?", id).Find(userproof)
+	dbTx := m.DB.Clauses(utils.MaxExecutionTimeHint).Table(m.table).Where("account_index = ?", id).Find(userproof)
 	if dbTx.Error != nil {
-		return nil, dbTx.Error
+		return nil, utils.ConvertMysqlErrToDbErr(dbTx.Error)
 	} else if dbTx.RowsAffected == 0 {
 		return nil, utils.DbErrNotFound
 	}
@@ -88,9 +88,9 @@ func (m *defaultUserProofModel) GetUserProofByIndex(id uint32) (userproof *UserP
 
 func (m *defaultUserProofModel) GetUserProofById(id string) (userproof *UserProof, err error) {
 	userproof = &UserProof{}
-	dbTx := m.DB.Table(m.table).Where("account_id = ?", id).Find(userproof)
+	dbTx := m.DB.Clauses(utils.MaxExecutionTimeHint).Table(m.table).Where("account_id = ?", id).Find(userproof)
 	if dbTx.Error != nil {
-		return nil, dbTx.Error
+		return nil, utils.ConvertMysqlErrToDbErr(dbTx.Error)
 	} else if dbTx.RowsAffected == 0 {
 		return nil, utils.DbErrNotFound
 	}
@@ -99,9 +99,9 @@ func (m *defaultUserProofModel) GetUserProofById(id string) (userproof *UserProo
 
 func (m *defaultUserProofModel) GetLatestAccountIndex() (uint32, error) {
 	var row *UserProof
-	dbTx := m.DB.Table(m.table).Order("account_index desc").Limit(1).Find(&row)
+	dbTx := m.DB.Clauses(utils.MaxExecutionTimeHint).Table(m.table).Order("account_index desc").Limit(1).Find(&row)
 	if dbTx.Error != nil {
-		return 0, dbTx.Error
+		return 0, utils.ConvertMysqlErrToDbErr(dbTx.Error)
 	} else if dbTx.RowsAffected == 0 {
 		return 0, utils.DbErrNotFound
 	}
@@ -110,9 +110,9 @@ func (m *defaultUserProofModel) GetLatestAccountIndex() (uint32, error) {
 
 func (m *defaultUserProofModel) GetUserCounts() (int, error) {
 	var count int64 = 0
-	dbTx := m.DB.Table(m.table).Count(&count)
+	dbTx := m.DB.Clauses(utils.MaxExecutionTimeHint).Table(m.table).Count(&count)
 	if dbTx.Error != nil {
-		return 0, dbTx.Error
+		return 0, utils.ConvertMysqlErrToDbErr(dbTx.Error)
 	}
 	return int(count), nil
 }

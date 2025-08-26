@@ -37,8 +37,10 @@ func LoadVerifyingKey(vkFileName string) (groth16.VerifyingKey, error) {
 	return vk, nil
 }
 
+
 func main() {
 	userFlag := flag.Bool("user", false, "flag which indicates user proof verification")
+	hashFlag := flag.Bool("hash", false, "flag which indicates hash command")
 	flag.Parse()
 	if *userFlag {
 		userConfig := &config.UserConfig{}
@@ -74,13 +76,34 @@ func main() {
 			panic("the AccountIdHash is invalid")
 		}
 		accountHash := poseidon.PoseidonBytes(accountIdHash, userConfig.TotalEquity.Bytes(), userConfig.TotalDebt.Bytes(), userConfig.TotalCollateral.Bytes(), assetCommitment)
-		fmt.Printf("merkle leave hash: %x\n", accountHash)
+		fmt.Println("user merkle leave hash base64 encode: ", base64.StdEncoding.EncodeToString(accountHash))
+		fmt.Printf("user merkle leave hash hex encode: %x\n", accountHash)
 		verifyFlag := utils.VerifyMerkleProof(root, userConfig.AccountIndex, proof, accountHash)
 		if verifyFlag {
 			fmt.Println("verify pass!!!")
 		} else {
 			fmt.Println("verify failed...")
 		}
+	} else if (*hashFlag) {
+		args := flag.Args()
+		if len(args) != 2 {
+			panic("invalid hash command, it needs two arguments")
+		}
+		hasher := poseidon.NewPoseidon()
+		p0, err := base64.StdEncoding.DecodeString(args[0])
+		if err != nil {
+			panic("invalid hash command, the first argument is not base64 encoded")
+		}
+		p1, err := base64.StdEncoding.DecodeString(args[1])
+		if err != nil {
+			panic("invalid hash command, the second argument is not base64 encoded")
+		}
+		hasher.Write(p0)
+		hasher.Write(p1)
+		res := hasher.Sum(nil)
+		resBase64 := base64.StdEncoding.EncodeToString(res)
+		fmt.Printf("hash result base64 encode: %s\n", resBase64)
+		fmt.Printf("hash result hex encode: %x\n", res)
 	} else {
 		verifierConfig := &config.Config{}
 		content, err := ioutil.ReadFile("config/config.json")

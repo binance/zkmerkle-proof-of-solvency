@@ -74,7 +74,17 @@ func NewWitness(accountTree bsmt.SparseMerkleTree, totalOpsNumber uint32,
 func (w *Witness) Run() {
 	// create table first
 	w.witnessModel.CreateBatchWitnessTable()
-	latestWitness, err := w.witnessModel.GetLatestBatchWitness()
+	var latestWitness *BatchWitness
+	var err error
+	for {
+		latestWitness, err = w.witnessModel.GetLatestBatchWitness()
+		if err == utils.DbErrQueryInterrupted || err == utils.DbErrQueryTimeout {
+			fmt.Println("get latest witness timeout, retry...:", err.Error())
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		break
+	}
 	var height int64
 	if err == utils.DbErrNotFound {
 		height = -1
