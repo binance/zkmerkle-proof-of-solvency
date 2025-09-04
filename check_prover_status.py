@@ -5,7 +5,7 @@ import os
 
 def get_delta():
     p = subprocess.run(["go", "run", "main.go", "-check_prover_status"], stdout=subprocess.PIPE)
-    return int(p.stdout.strip().split(b"\n")[1])
+    return int(p.stdout.strip().split(b"\n")[-1])
 
 def rerun():
     process = subprocess.Popen(["go", "run", "main.go", "-rerun"], stdout=subprocess.PIPE)
