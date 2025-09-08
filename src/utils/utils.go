@@ -850,6 +850,9 @@ func ConvertMysqlErrToDbErr(err error) error {
 		if mysqlErr.Number == 3024 {
 			return DbErrQueryTimeout
 		}
+		if mysqlErr.Number == 1146 {
+			return DbErrTableNotFound
+		}
 	}
 	return err
 }

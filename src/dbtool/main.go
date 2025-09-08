@@ -145,6 +145,11 @@ func main() {
 				time.Sleep(1 * time.Second)
 				continue
 			}
+			if err == utils.DbErrTableNotFound {
+				fmt.Println("proof table not found")
+				proofCounts = 0
+				break
+			}
 			if err != nil {
 				panic(err.Error())
 			}
