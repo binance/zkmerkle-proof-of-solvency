@@ -90,6 +90,8 @@ var (
 		"pump": true,
 		"MONKY": true,
 		"monky": true,
+		"1000CHEEMS": true,
+		"1000cheems": true,
 	}
 	// the key is the number of assets user own
 	// the value is the number of batch create user ops
