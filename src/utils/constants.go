@@ -82,6 +82,14 @@ var (
 		"bome": true,
 		"1MBABYDOGE": true,
 		"1mbabydoge": true,
+		"HMSTR": true,
+		"hmstr": true,
+		"WLFI": true,
+		"wlfi": true,
+		"PUMP": true,
+		"pump": true,
+		"MONKY": true,
+		"monky": true,
 	}
 	// the key is the number of assets user own
 	// the value is the number of batch create user ops
