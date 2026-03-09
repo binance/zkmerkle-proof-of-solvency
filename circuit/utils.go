@@ -20,17 +20,6 @@ func verifyMerkleProof(api API, merkleRoot Variable, node Variable, proofSet, he
 	api.AssertIsEqual(merkleRoot, node)
 }
 
-func updateMerkleProof(api API, node Variable, proofSet, helper []Variable) (root Variable) {
-	for i := 0; i < len(proofSet); i++ {
-		api.AssertIsBoolean(helper[i])
-		d1 := api.Select(helper[i], proofSet[i], node)
-		d2 := api.Select(helper[i], node, proofSet[i])
-		node = poseidon.Poseidon(api, d1, d2)
-	}
-	root = node
-	return root
-}
-
 func accountIdToMerkleHelper(api API, accountId Variable) []Variable {
 	merkleHelpers := api.ToBinary(accountId, utils.AccountTreeDepth)
 	return merkleHelpers
@@ -51,6 +40,9 @@ func computeUserAssetsCommitment(api API, flattenAssets []Variable) Variable {
 	}
 	for i := remainderEles; i < 3; i++ {
 		lastEle = api.Mul(lastEle, utils.Uint64MaxValueFr)
+	}
+	if remainderEles > 0 {
+		tmpUserAssets[quotientEles] = lastEle
 	}
 	commitment := poseidon.Poseidon(api, tmpUserAssets...)
 	return commitment
@@ -119,6 +111,11 @@ func IntegerDivision(_ *big.Int, in []*big.Int, out []*big.Int) error {
 
 func getAndCheckTierRatiosQueryResults(api API, r frontend.Rangechecker, tierRatiosTable *logderivlookup.Table,
 	assetIndex, userCollateral, collateralIndex, collateralFlag, assetPrice, collateralTierRatiosLen Variable) (collateralValueRes Variable) {
+	// Constrain collateralIndex to [0, TierCount-1] to prevent cross-asset lookup table access
+	api.AssertIsLessOrEqualNOp(collateralIndex, utils.TierCount-1, 4, true)
+	// Constrain collateralFlag to boolean
+	api.AssertIsBoolean(collateralFlag)
+
 	// All indexes are shifted by 1 overall because we add a dummy tier ratio at the beginning
 	// 18 = 3 * 6: 3 means the number of collateral types, 6 means the number of tier ratios queries for each collateral type
 	numOfTierRatioFields := 3
@@ -167,7 +164,7 @@ func constructLoanTierRatiosLookupTable(api API, cexAssetInfo []CexAssetInfo) *l
 	t := logderivlookup.New(api)
 	for i := 0; i < len(cexAssetInfo); i++ {
 		// dummy tier ratio
-		for i := 0; i < 3; i++ {
+		for range 3 {
 			t.Insert(0)
 		}
 		for j := 0; j < len(cexAssetInfo[i].LoanRatios); j++ {
@@ -183,7 +180,7 @@ func constructMarginTierRatiosLookupTable(api API, cexAssetInfo []CexAssetInfo) 
 	t := logderivlookup.New(api)
 	for i := 0; i < len(cexAssetInfo); i++ {
 		// dummy tier ratio
-		for i := 0; i < 3; i++ {
+		for range 3 {
 			t.Insert(0)
 		}
 		for j := 0; j < len(cexAssetInfo[i].MarginRatios); j++ {
@@ -199,7 +196,7 @@ func constructPortfolioTierRatiosLookupTable(api API, cexAssetInfo []CexAssetInf
 	t := logderivlookup.New(api)
 	for i := 0; i < len(cexAssetInfo); i++ {
 		// dummy tier ratio
-		for i := 0; i < 3; i++ {
+		for range 3 {
 			t.Insert(0)
 		}
 		for j := 0; j < len(cexAssetInfo[i].PortfolioMarginRatios); j++ {

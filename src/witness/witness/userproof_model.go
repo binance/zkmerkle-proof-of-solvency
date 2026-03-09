@@ -1,12 +1,13 @@
-package model
+package witness
 
 import (
+	"math/big"
+
 	"github.com/binance/zkmerkle-proof-of-solvency/src/utils"
 	"gorm.io/gorm"
-	"math/big"
 )
 
-const TableNamePreifx = "userproof"
+const UserProofTableNamePrefix = "userproof"
 
 type (
 	UserProofModel interface {
@@ -37,14 +38,14 @@ type (
 	}
 
 	UserConfig struct {
-		AccountIndex  uint32
-		AccountIdHash string
-		TotalEquity   *big.Int
-		TotalDebt     *big.Int
+		AccountIndex    uint32
+		AccountIdHash   string
+		TotalEquity     *big.Int
+		TotalDebt       *big.Int
 		TotalCollateral *big.Int
-		Assets        []utils.AccountAsset
-		Root          string
-		Proof         [][]byte
+		Assets          []utils.AccountAsset
+		Root            string
+		Proof           [][]byte
 	}
 )
 
@@ -54,7 +55,7 @@ func (m *defaultUserProofModel) TableName() string {
 
 func NewUserProofModel(db *gorm.DB, suffix string) UserProofModel {
 	return &defaultUserProofModel{
-		table: TableNamePreifx + suffix,
+		table: UserProofTableNamePrefix + suffix,
 		DB:    db,
 	}
 }

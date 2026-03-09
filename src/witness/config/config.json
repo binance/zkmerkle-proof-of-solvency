@@ -1,11 +1,5 @@
 {
-  "MysqlDataSource" : "zkpos:zkpos@123@tcp(127.0.0.1:3306)/zkpos?parseTime=true",
+  "MysqlDataSource" : "zkpos:zkpos@123@tcp(127.0.0.1:3306)/zkpos?parseTime=true&readTimeout=10s",
   "DbSuffix": "0",
-  "UserDataFile": "/server/data/20230118",
-  "TreeDB": {
-    "Driver": "redis",
-    "Option": {
-      "Addr": "127.0.0.1:6666"
-    }
-  }
+  "UserDataFile": "./src/userdata"
 }

@@ -10,10 +10,11 @@ import (
 
 type BatchCreateUserCircuit struct {
 	BatchCommitment           Variable `gnark:",public"`
-	BeforeAccountTreeRoot     Variable
-	AfterAccountTreeRoot      Variable
+	AccountTreeRoot           Variable
 	BeforeCEXAssetsCommitment Variable
 	AfterCEXAssetsCommitment  Variable
+	MinAccountIndex           Variable
+	MaxAccountIndex           Variable
 	BeforeCexAssets           []CexAssetInfo
 	CreateUserOps             []CreateUserOperation
 }
@@ -27,10 +28,11 @@ func NewVerifyBatchCreateUserCircuit(commitment []byte) *BatchCreateUserCircuit 
 func NewBatchCreateUserCircuit(userAssetCounts uint32, allAssetCounts uint32, batchCounts uint32) *BatchCreateUserCircuit {
 	var circuit BatchCreateUserCircuit
 	circuit.BatchCommitment = 0
-	circuit.BeforeAccountTreeRoot = 0
-	circuit.AfterAccountTreeRoot = 0
+	circuit.AccountTreeRoot = 0
 	circuit.BeforeCEXAssetsCommitment = 0
 	circuit.AfterCEXAssetsCommitment = 0
+	circuit.MinAccountIndex = 0
+	circuit.MaxAccountIndex = 0
 	circuit.BeforeCexAssets = make([]CexAssetInfo, allAssetCounts)
 	for i := uint32(0); i < allAssetCounts; i++ {
 		circuit.BeforeCexAssets[i] = CexAssetInfo{
@@ -65,13 +67,11 @@ func NewBatchCreateUserCircuit(userAssetCounts uint32, allAssetCounts uint32, ba
 	circuit.CreateUserOps = make([]CreateUserOperation, batchCounts)
 	for i := uint32(0); i < batchCounts; i++ {
 		circuit.CreateUserOps[i] = CreateUserOperation{
-			BeforeAccountTreeRoot: 0,
-			AfterAccountTreeRoot:  0,
-			Assets:                make([]UserAssetInfo, userAssetCounts),
-			AssetsForUpdateCex:    make([]UserAssetMeta, allAssetCounts),
-			AccountIndex:          0,
-			AccountIdHash:         0,
-			AccountProof:          [utils.AccountTreeDepth]Variable{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+			Assets:             make([]UserAssetInfo, userAssetCounts),
+			AssetsForUpdateCex: make([]UserAssetMeta, allAssetCounts),
+			AccountIndex:       0,
+			AccountIdHash:      0,
+			AccountProof:       [utils.AccountTreeDepth]Variable{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 		}
 		for j := uint32(0); j < allAssetCounts; j++ {
 			circuit.CreateUserOps[i].AssetsForUpdateCex[j].Debt = 0
@@ -96,8 +96,12 @@ func NewBatchCreateUserCircuit(userAssetCounts uint32, allAssetCounts uint32, ba
 }
 
 func (b BatchCreateUserCircuit) Define(api API) error {
+	// verify MinAccountIndex and MaxAccountIndex match the first and last op
+	api.AssertIsEqual(b.MinAccountIndex, b.CreateUserOps[0].AccountIndex)
+	api.AssertIsEqual(b.MaxAccountIndex, b.CreateUserOps[len(b.CreateUserOps)-1].AccountIndex)
+
 	// verify whether BatchCommitment is computed correctly
-	actualBatchCommitment := poseidon.Poseidon(api, b.BeforeAccountTreeRoot, b.AfterAccountTreeRoot, b.BeforeCEXAssetsCommitment, b.AfterCEXAssetsCommitment)
+	actualBatchCommitment := poseidon.Poseidon(api, b.AccountTreeRoot, b.BeforeCEXAssetsCommitment, b.AfterCEXAssetsCommitment, b.MinAccountIndex, b.MaxAccountIndex)
 	api.AssertIsEqual(b.BatchCommitment, actualBatchCommitment)
 	countOfCexAsset := getVariableCountOfCexAsset(b.BeforeCexAssets[0])
 	cexAssets := make([]Variable, len(b.BeforeCexAssets)*countOfCexAsset)
@@ -124,8 +128,6 @@ func (b BatchCreateUserCircuit) Define(api API) error {
 	}
 	actualCexAssetsCommitment := poseidon.Poseidon(api, cexAssets...)
 	api.AssertIsEqual(b.BeforeCEXAssetsCommitment, actualCexAssetsCommitment)
-	api.AssertIsEqual(b.BeforeAccountTreeRoot, b.CreateUserOps[0].BeforeAccountTreeRoot)
-	api.AssertIsEqual(b.AfterAccountTreeRoot, b.CreateUserOps[len(b.CreateUserOps)-1].AfterAccountTreeRoot)
 
 	loanTierRatiosTable := constructLoanTierRatiosLookupTable(api, b.BeforeCexAssets)
 	marginTierRatiosTable := constructMarginTierRatiosLookupTable(api, b.BeforeCexAssets)
@@ -136,8 +138,13 @@ func (b BatchCreateUserCircuit) Define(api API) error {
 	userAssetsQueries := make([][]Variable, len(b.CreateUserOps))
 
 	for i := 0; i < len(b.CreateUserOps); i++ {
+		// verify AccountIndex increments by 1 across the batch
+		if i > 0 {
+			api.AssertIsEqual(b.CreateUserOps[i].AccountIndex, api.Add(b.CreateUserOps[i-1].AccountIndex, 1))
+		}
+
 		accountIndexHelper := accountIdToMerkleHelper(api, b.CreateUserOps[i].AccountIndex)
-		verifyMerkleProof(api, b.CreateUserOps[i].BeforeAccountTreeRoot, EmptyAccountLeafNodeHash, b.CreateUserOps[i].AccountProof[:], accountIndexHelper)
+
 		var totalUserEquity Variable = 0
 		var totalUserDebt Variable = 0
 		userAssets := b.CreateUserOps[i].Assets
@@ -160,6 +167,7 @@ func (b BatchCreateUserCircuit) Define(api API) error {
 			cr := api.CmpNOp(userAssets[j+1].AssetIndex, userAssets[j].AssetIndex, 16, true)
 			api.AssertIsEqual(cr, 1)
 		}
+		r.Check(userAssets[len(userAssets)-1].AssetIndex, 16)
 
 		// one Variable can store 15 assetIds, one assetId is less than 16 bits
 		assetIdsToVariables := make([]Variable, (len(userAssets)+14)/15)
@@ -215,26 +223,27 @@ func (b BatchCreateUserCircuit) Define(api API) error {
 			r.Check(assetTotalCollateral, 64)
 			api.AssertIsLessOrEqualNOp(assetTotalCollateral, userEquity, 64, true)
 
+			flattenTierRatiosLength := 3 * (utils.TierCount + 1)
 			loanRealValue := getAndCheckTierRatiosQueryResults(api, r, loanTierRatiosTable, userAssets[j].AssetIndex,
 				userLoanCollateral,
 				userAssets[j].LoanCollateralIndex,
 				userAssets[j].LoanCollateralFlag,
 				assetPriceResponses[j],
-				3*(len(b.BeforeCexAssets[j].LoanRatios)+1))
+				flattenTierRatiosLength)
 
 			marginRealValue := getAndCheckTierRatiosQueryResults(api, r, marginTierRatiosTable, userAssets[j].AssetIndex,
 				userMarginCollateral,
 				userAssets[j].MarginCollateralIndex,
 				userAssets[j].MarginCollateralFlag,
 				assetPriceResponses[j],
-				3*(len(b.BeforeCexAssets[j].MarginRatios)+1))
+				flattenTierRatiosLength)
 
 			portfolioMarginRealValue := getAndCheckTierRatiosQueryResults(api, r, portfolioMarginTierRatiosTable, userAssets[j].AssetIndex,
 				userPortfolioMarginCollateral,
 				userAssets[j].PortfolioMarginCollateralIndex,
 				userAssets[j].PortfolioMarginCollateralFlag,
 				assetPriceResponses[j],
-				3*(len(b.BeforeCexAssets[j].PortfolioMarginRatios)+1))
+				flattenTierRatiosLength)
 
 			totalUserCollateralRealValue = api.Add(totalUserCollateralRealValue, loanRealValue, marginRealValue, portfolioMarginRealValue)
 
@@ -256,8 +265,8 @@ func (b BatchCreateUserCircuit) Define(api API) error {
 		api.AssertIsLessOrEqualNOp(totalUserDebt, totalUserCollateralRealValue, 128, true)
 		userAssetsCommitment := computeUserAssetsCommitment(api, flattenAssetFieldsForHash)
 		accountHash := poseidon.Poseidon(api, b.CreateUserOps[i].AccountIdHash, totalUserEquity, totalUserDebt, totalUserCollateralRealValue, userAssetsCommitment)
-		actualAccountTreeRoot := updateMerkleProof(api, accountHash, b.CreateUserOps[i].AccountProof[:], accountIndexHelper)
-		api.AssertIsEqual(actualAccountTreeRoot, b.CreateUserOps[i].AfterAccountTreeRoot)
+		// verify the account hash against the final merkle tree root
+		verifyMerkleProof(api, b.AccountTreeRoot, accountHash, b.CreateUserOps[i].AccountProof[:], accountIndexHelper)
 	}
 
 	// make sure user assets contains all non-zero assets of AssetsForUpdateCex
@@ -307,11 +316,6 @@ func (b BatchCreateUserCircuit) Define(api API) error {
 	// verify AfterCEXAssetsCommitment is computed correctly
 	actualAfterCEXAssetsCommitment := poseidon.Poseidon(api, tempAfterCexAssets...)
 	api.AssertIsEqual(actualAfterCEXAssetsCommitment, b.AfterCEXAssetsCommitment)
-	api.Println("actualAfterCEXAssetsCommitment: ", actualAfterCEXAssetsCommitment)
-	api.Println("AfterCEXAssetsCommitment: ", b.AfterCEXAssetsCommitment)
-	for i := 0; i < len(b.CreateUserOps)-1; i++ {
-		api.AssertIsEqual(b.CreateUserOps[i].AfterAccountTreeRoot, b.CreateUserOps[i+1].BeforeAccountTreeRoot)
-	}
 	return nil
 }
 
@@ -327,10 +331,11 @@ func copyTierRatios(dst []TierRatio, src []utils.TierRatio) {
 func SetBatchCreateUserCircuitWitness(batchWitness *utils.BatchCreateUserWitness) (witness *BatchCreateUserCircuit, err error) {
 	witness = &BatchCreateUserCircuit{
 		BatchCommitment:           batchWitness.BatchCommitment,
-		BeforeAccountTreeRoot:     batchWitness.BeforeAccountTreeRoot,
-		AfterAccountTreeRoot:      batchWitness.AfterAccountTreeRoot,
+		AccountTreeRoot:           batchWitness.AccountTreeRoot,
 		BeforeCEXAssetsCommitment: batchWitness.BeforeCEXAssetsCommitment,
 		AfterCEXAssetsCommitment:  batchWitness.AfterCEXAssetsCommitment,
+		MinAccountIndex:           batchWitness.MinAccountIndex,
+		MaxAccountIndex:           batchWitness.MaxAccountIndex,
 		BeforeCexAssets:           make([]CexAssetInfo, len(batchWitness.BeforeCexAssets)),
 		CreateUserOps:             make([]CreateUserOperation, len(batchWitness.CreateUserOps)),
 	}
@@ -356,8 +361,6 @@ func SetBatchCreateUserCircuitWitness(batchWitness *utils.BatchCreateUserWitness
 	// and the rest of the users in the batch may be padding accounts
 	targetCounts := utils.GetNonEmptyAssetsCountOfUser(batchWitness.CreateUserOps[0].Assets)
 	for i := 0; i < len(witness.CreateUserOps); i++ {
-		witness.CreateUserOps[i].BeforeAccountTreeRoot = batchWitness.CreateUserOps[i].BeforeAccountTreeRoot
-		witness.CreateUserOps[i].AfterAccountTreeRoot = batchWitness.CreateUserOps[i].AfterAccountTreeRoot
 		witness.CreateUserOps[i].AssetsForUpdateCex = make([]UserAssetMeta, cexAssetsCount)
 
 		existingKeys := make([]int, 0)

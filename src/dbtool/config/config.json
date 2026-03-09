@@ -1,12 +1,6 @@
 {
   "MysqlDataSource" : "zkpos:zkpos@123@tcp(127.0.0.1:3306)/zkpos?parseTime=true",
   "DbSuffix": "0",
-  "TreeDB": {
-    "Driver": "redis",
-    "Option": {
-      "Addr": "127.0.0.1:6666"
-    }
-  },
   "Redis": {
     "Host": "127.0.0.1:6379"
   }

@@ -1,14 +1,22 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"runtime"
+	"sort"
+	"sync"
 
 	"github.com/binance/zkmerkle-proof-of-solvency/src/utils"
+	"github.com/binance/zkmerkle-proof-of-solvency/src/utils/merkletree"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/witness/config"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/witness/witness"
+	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
+	"github.com/consensys/gnark-crypto/ecc/bn254/fr/poseidon"
 )
 
 func main() {
@@ -35,19 +43,115 @@ func main() {
 	if err != nil {
 		panic(err.Error())
 	}
-	accountTree, err := utils.NewAccountTree(witnessConfig.TreeDB.Driver, witnessConfig.TreeDB.Option.Addr)
-	if err != nil {
-		panic(err.Error())
-	}
-	fmt.Println("account tree init height is ", accountTree.LatestVersion())
-	fmt.Printf("account tree root is %x\n", accountTree.Root())
 
 	totalAccountNum := 0
 	for k, v := range accounts {
 		totalAccountNum += len(v)
 		fmt.Println("the asset counts of user is ", k, "total ops number is ", len(v))
 	}
-	witnessService := witness.NewWitness(accountTree, uint32(totalAccountNum), accounts, cexAssetsInfo, witnessConfig)
-	witnessService.Run()
-	fmt.Println("witness service run finished...")
+
+	// Padding accounts to align with batch sizes.
+	keys := make([]int, 0, len(accounts))
+	for k := range accounts {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
+	for _, k := range keys {
+		accounts[k] = utils.PaddingAccounts(accounts[k], k)
+	}
+
+	// Assign AccountIndex sequentially (0, 1, 2, ...) in batch order
+	// so that within each batch AccountIndex increments by 1,
+	// and between consecutive batches the indices are contiguous.
+	globalIndex := uint32(0)
+	for _, k := range keys {
+		for i := range accounts[k] {
+			accounts[k][i].AccountIndex = globalIndex
+			if len(accounts[k][i].AccountId) == 0 {
+				var buf [4]byte
+				binary.BigEndian.PutUint32(buf[:], globalIndex)
+				h := sha256.Sum256(buf[:])
+				accounts[k][i].AccountId = new(fr.Element).SetBytes(h[:]).Marshal()
+			}
+			globalIndex++
+		}
+	}
+
+	// Compute total capacity (sum of all padded accounts).
+	capacity := 0
+	for _, v := range accounts {
+		capacity += len(v)
+	}
+	fmt.Println("total capacity after padding:", capacity)
+
+	// Create account tree with exact capacity.
+	accountTree, err := utils.NewAccountTree(capacity)
+	if err != nil {
+		panic(err.Error())
+	}
+	fmt.Println("account tree initialized")
+
+	// Set all account leaves into the tree in parallel.
+	buildAccountTree(accountTree, accounts, keys)
+	fmt.Printf("account tree root is %x\n", accountTree.Root())
+
+	witnessService := witness.NewWitness(accountTree, accounts, cexAssetsInfo, witnessConfig)
+	userProofService := witness.NewUserProofService(accountTree, accounts, witnessService.GetDB(), witnessConfig.DbSuffix)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		witnessService.Run()
+		fmt.Println("witness service run finished...")
+	}()
+	go func() {
+		defer wg.Done()
+		userProofService.Run()
+	}()
+	wg.Wait()
+}
+
+// buildAccountTree computes hashes for all accounts and sets them into the tree,
+// then calls Build to compute internal nodes.
+func buildAccountTree(tree *merkletree.FixedDepthMerkleTree, accounts map[int][]utils.AccountInfo, keys []int) {
+	workers := runtime.NumCPU()
+	if workers < 1 {
+		workers = 1
+	}
+
+	total := 0
+	for _, k := range keys {
+		tierAccounts := accounts[k]
+		n := len(tierAccounts)
+		total += n
+
+		chunkSize := (n + workers - 1) / workers
+		var wg sync.WaitGroup
+		for w := 0; w < workers; w++ {
+			start := w * chunkSize
+			end := start + chunkSize
+			if end > n {
+				end = n
+			}
+			if start >= end {
+				break
+			}
+			wg.Add(1)
+			go func(accs []utils.AccountInfo, start, end int) {
+				defer wg.Done()
+				poseidonHasher := poseidon.NewPoseidon()
+				for i := start; i < end; i++ {
+					accountHash := utils.AccountInfoToHash(&accs[i], &poseidonHasher)
+					if err := tree.Set(accs[i].AccountIndex, accountHash); err != nil {
+						panic(fmt.Sprintf("failed to set account %d: %v", accs[i].AccountIndex, err))
+					}
+				}
+			}(tierAccounts, start, end)
+		}
+		wg.Wait()
+	}
+
+	tree.Build()
+	fmt.Println("account tree built with", total, "accounts")
 }

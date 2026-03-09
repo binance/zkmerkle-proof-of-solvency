@@ -1,9 +1,12 @@
 package utils
 
 import (
-	// "fmt"
+	"fmt"
 	"math/big"
+	"os"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/poseidon"
@@ -99,7 +102,7 @@ var (
 	// the value is the number of batch create user ops
 	BatchCreateUserOpsCountsTiers = map[int]int {
 		500: 92,
-		50: 700,
+		50: 760,
 	}
 	AssetCountsTiers = make([]int, 0)
 
@@ -123,4 +126,39 @@ func init() {
 	tempHash := poseidon.Poseidon(zero, zero, zero, zero, zero).Bytes()
 	NilAccountHash = tempHash[:]
 	// fmt.Printf("NilAccountHash: %x\n", NilAccountHash)
+
+	if testTiers := strings.TrimSpace(os.Getenv("ZKPOR_TEST_TIERS")); testTiers != "" {
+		parsed, err := parseTiers(testTiers)
+		if err != nil {
+			panic("failed to parse ZKPOR_TEST_TIERS: " + err.Error())
+		}
+		BatchCreateUserOpsCountsTiers = parsed
+		AssetCountsTiers = make([]int, 0)
+		for k := range BatchCreateUserOpsCountsTiers {
+			AssetCountsTiers = append(AssetCountsTiers, k)
+		}
+		sort.Ints(AssetCountsTiers)
+		fmt.Printf("ZKPOR_TEST_TIERS override active: %v\n", BatchCreateUserOpsCountsTiers)
+	}
+}
+
+// parseTiers parses a tier string like "500:4,50:20" into a map[int]int.
+func parseTiers(s string) (map[int]int, error) {
+	result := make(map[int]int)
+	for _, pair := range strings.Split(s, ",") {
+		parts := strings.SplitN(strings.TrimSpace(pair), ":", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid tier pair: %q", pair)
+		}
+		k, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+		if err != nil {
+			return nil, fmt.Errorf("invalid asset count %q: %w", parts[0], err)
+		}
+		v, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+		if err != nil {
+			return nil, fmt.Errorf("invalid ops count %q: %w", parts[1], err)
+		}
+		result[k] = v
+	}
+	return result, nil
 }

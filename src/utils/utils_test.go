@@ -179,8 +179,65 @@ func TestParseCexAssetInfoFromFile(t *testing.T) {
 			actualAssetsCount++
 		}
 	}
-	if actualAssetsCount != 326 {
+	if actualAssetsCount != 483 {
 		t.Errorf("error: %d\n", actualAssetsCount)
 	}
 	fmt.Println("cexAssetsInfo: ", cexAssetsInfo[0].PortfolioMarginRatios)
+}
+
+func TestParseTiers(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    map[int]int
+		wantErr bool
+	}{
+		{
+			name:  "normal two tiers",
+			input: "500:4,50:20",
+			want:  map[int]int{500: 4, 50: 20},
+		},
+		{
+			name:  "single tier",
+			input: "500:4",
+			want:  map[int]int{500: 4},
+		},
+		{
+			name:  "with spaces",
+			input: " 500 : 4 , 50 : 20 ",
+			want:  map[int]int{500: 4, 50: 20},
+		},
+		{
+			name:    "invalid format",
+			input:   "500-4",
+			wantErr: true,
+		},
+		{
+			name:    "non-numeric key",
+			input:   "abc:4",
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseTiers(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+			for k, v := range tt.want {
+				if got[k] != v {
+					t.Errorf("key %d: got %d, want %d", k, got[k], v)
+				}
+			}
+		})
+	}
 }
