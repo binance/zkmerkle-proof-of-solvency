@@ -9,16 +9,16 @@ See the [technical blog](./docs/updated_proof_of_solvency_to_mitigate_dummy_user
 
 | Component | Constraints |
 |-----------|------------|
-| Base (shared across all users in a batch) | ~6,575,000 |
-| Per user — 50-asset tier | ~76,700 |
-| Per user — 500-asset tier | ~624,500 |
+| Base (shared across all users in a batch) | ~6,630,000 |
+| Per user — 50-asset tier | ~42,300 |
+| Per user — 500-asset tier | ~281,200 |
 
 #### How `BatchCreateUserOpsCountsTiers` Is Determined
 
 The maximum constraint count supported by the underlying ZK algorithm (Groth16 over BN254 via gnark) is 2^28. We target 2^26 constraints per batch to leave a safety margin. The per-tier batch sizes are derived as follows:
 
-- **500-asset tier**: (2^26 − 6,575,000) / 624,500 ≈ 97 → rounded down to **92**
-- **50-asset tier**: (2^26 − 6,575,000) / 76,700 ≈ 789 → rounded down to **760**
+- **500-asset tier**: (2^26 − 6,630,000) / 281,200 ≈ 215 → rounded down to **200**
+- **50-asset tier**: (2^26 − 6,575,000) / 42,300 ≈ 1430 → rounded down to **1380**
 
 ## How to run
 
@@ -51,12 +51,12 @@ cd src/keygen; go run main.go
 
 After `keygen` service finishes running, there will be several key files generated in the current directory, like the following:
 ```shell
--rw-r--r--. 1 root root  524 Aug 19 09:46 zkpor350_128.vk
--rw-r--r--. 1 root root  12G Aug 19 09:46 zkpor350_128.pk
--rw-r--r--. 1 root root 7.5G Aug 19 09:47 zkpor350_128.r1cs
--rw-r--r--. 1 root root  524 Aug 19 10:38 zkpor50_580.vk
--rw-r--r--. 1 root root  12G Aug 19 10:38 zkpor50_580.pk
--rw-r--r--. 1 root root  12G Aug 19 10:39 zkpor50_580.r1cs
+-rw-r--r--. 1 root root  524 Aug 19 09:46 zkpor500_200.vk
+-rw-r--r--. 1 root root  12G Aug 19 09:46 zkpor500_200.pk
+-rw-r--r--. 1 root root 7.5G Aug 19 09:47 zkpor500_200.r1cs
+-rw-r--r--. 1 root root  524 Aug 19 10:38 zkpor50_1380.vk
+-rw-r--r--. 1 root root  12G Aug 19 10:38 zkpor50_1380.pk
+-rw-r--r--. 1 root root  12G Aug 19 10:39 zkpor50_1380.r1cs
 ```
 
 ### Generate witness
@@ -86,7 +86,7 @@ cd witness; go run main.go
 
 The `witness` service supports recovery from unexpected crash. After `witness` service finish running, we can see `witness` from `witness` table and user proofs from `userproof` table.
 
-One witness batch contains 760 users whose assets number is less or equal than 50, and 92 users whose assets number is larger than 50.
+One witness batch contains 1380 users whose assets number is less or equal than 50, and 200 users whose assets number is larger than 50.
 
 ### Push Task to Redis
 The `db_tool` cli provide a subcommand called `push_task_to_redis` which can be used for push proof generating tasks to redis after all the witnesses data are generated. The provers will fetch the proof-generating tasks from redis, update the witness data status into `received`, then generate the proof, and update the witness data status into `finished`.
@@ -103,8 +103,8 @@ The `prover` service is used to generate zk proof and supports running in parall
   "Redis": {
     "Host": "127.0.0.1:6379",
   },
-  "ZkKeyName": ["/server/zkmerkle-proof-of-solvency/src/keygen/zkpor50_580", "/server/zkmerkle-proof-of-solvency/src/keygen/zkpor350_128"],
-  "AssetsCountTiers": [50, 350]
+  "ZkKeyName": ["/server/zkmerkle-proof-of-solvency/src/keygen/zkpor50_1380", "/server/zkmerkle-proof-of-solvency/src/keygen/zkpor500_200"],
+  "AssetsCountTiers": [50, 500]
 }
 ```
 
@@ -138,8 +138,8 @@ The service use `config.json` as its config file, and the sample config is as fo
 ```json
 {
   "ProofTable": "config/proof.csv",
-  "ZkKeyName": ["config/zkpor50_580", "config/zkpor350_128"],
-  "AssetsCountTiers": [50, 350],
+  "ZkKeyName": ["config/zkpor50_1380", "config/zkpor500_200"],
+  "AssetsCountTiers": [50, 500],
   "CexAssetsInfo": [{"TotalEquity":219971568487,"TotalDebt":9789219,"BasePrice":24620000000},{"TotalEquity":8664493444,"TotalDebt":122580,"BasePrice":1682628000000},{"TotalEquity":67463930749983,"TotalDebt":16127314913,"BasePrice":100000000},{"TotalEquity":68358645578,"TotalDebt":130187,"BasePrice":121377000000},{"TotalEquity":590353015932,"TotalDebt":0,"BasePrice":598900000},{"TotalEquity":255845425858,"TotalDebt":13839361,"BasePrice":6541000000},{"TotalEquity":0,"TotalDebt":0,"BasePrice":99991478},{"TotalEquity":267958065914051,"TotalDebt":501899265949,"BasePrice":100000000},{"TotalEquity":124934670143615,"TotalDebt":1422964747,"BasePrice":34500000}]
 }
 ```

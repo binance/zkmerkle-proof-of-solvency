@@ -36,8 +36,8 @@ TierCount        = 12                    // collateral ratio tiers
 
 // Multi-tier circuit: asset count -> users per batch
 BatchCreateUserOpsCountsTiers = map[int]int{
-    500: 92,    // users with many assets
-    50:  760,   // users with few assets
+    500: 200,   // users with many assets
+    50:  1380,  // users with few assets
 }
 AssetCountsTiers = [50, 500]             // sorted tier keys
 ```
@@ -134,6 +134,6 @@ go test ./src/utils/ -v
 ## Development Notes
 
 - Circuit changes require updating: `circuit/` -> `src/witness/witness/` -> `src/prover/prover/` -> `src/verifier/main.go` -> `circuit/*_test.go`
-- Test uses 4 users per batch (not real 92/760) for speed
+- Test uses 4 users per batch (not real 200/1380) for speed
 - `BatchCommitment` is the only public input to the circuit; all verification derives from it
 - The `replace` directives in `go.mod` point gnark/gnark-crypto to bnb-chain forks

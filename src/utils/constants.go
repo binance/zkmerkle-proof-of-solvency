@@ -101,8 +101,8 @@ var (
 	// the key is the number of assets user own
 	// the value is the number of batch create user ops
 	BatchCreateUserOpsCountsTiers = map[int]int {
-		500: 92,
-		50: 760,
+		500: 200,
+		50: 1380,
 	}
 	AssetCountsTiers = make([]int, 0)
 

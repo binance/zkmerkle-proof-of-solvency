@@ -14,7 +14,7 @@ set -euo pipefail
 # --- Configuration ---
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WORK_DIR="${PROJECT_ROOT}/_integration_test"
-TEST_TIERS="500:16,50:130"
+TEST_TIERS="500:30,50:220"
 EXPECT_TOTAL_USERS_ACCOUNT=10106
 EXPECT_TOTAL_PROOFS=83
 MYSQL_PORT=13306
@@ -30,8 +30,8 @@ NUM_USER_PROOFS_TO_VERIFY=500
 
 # Keygen file names derived from TEST_TIERS
 KEYGEN_FILES=(
-    "zkpor500_16.pk" "zkpor500_16.vk" "zkpor500_16.r1cs"
-    "zkpor50_130.pk" "zkpor50_130.vk" "zkpor50_130.r1cs"
+    "zkpor500_30.pk" "zkpor500_30.vk" "zkpor500_30.r1cs"
+    "zkpor50_220.pk" "zkpor50_220.vk" "zkpor50_220.r1cs"
 )
 
 # --- Helper functions ---
@@ -190,7 +190,7 @@ write_config "$(cat <<EOF
         "Host": "127.0.0.1:${REDIS_PORT}",
         "Password": ""
     },
-    "ZkKeyName": ["zkpor50_130", "zkpor500_16"],
+    "ZkKeyName": ["zkpor50_220", "zkpor500_30"],
     "AssetsCountTiers": [50, 500]
 }
 EOF
@@ -255,7 +255,7 @@ cd "$PROJECT_ROOT"
 cat > "${WORK_DIR}/config/config.json" <<EOF
 {
     "ProofTable": "config/proof.csv",
-    "ZkKeyName": ["zkpor50_130", "zkpor500_16"],
+    "ZkKeyName": ["zkpor50_220", "zkpor500_30"],
     "AssetsCountTiers": [50, 500],
     "CexAssetsInfo": ${CEX_ASSETS_JSON}
 }
