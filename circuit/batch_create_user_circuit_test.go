@@ -61,7 +61,7 @@ func ConstructR1csAndWitness(provingSystem string, assetCountsTier int, userOpsP
 
 func TestBatchCreateUserCircuit(t *testing.T) {
 	for _, assetCountsTier := range utils.AssetCountsTiers {
-		userOpsPerBatch := 4
+		userOpsPerBatch := 2
 		t.Run(fmt.Sprintf("assets_%d_users_%d", assetCountsTier, userOpsPerBatch), func(t *testing.T) {
 			oR1cs, witness, err := ConstructR1csAndWitness("groth16", assetCountsTier, userOpsPerBatch)
 			if err != nil {

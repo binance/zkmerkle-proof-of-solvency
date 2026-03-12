@@ -229,21 +229,24 @@ func (b BatchCreateUserCircuit) Define(api API) error {
 				userAssets[j].LoanCollateralIndex,
 				userAssets[j].LoanCollateralFlag,
 				assetPriceResponses[j],
-				flattenTierRatiosLength)
+				flattenTierRatiosLength,
+				utils.TierCount-1)
 
 			marginRealValue := getAndCheckTierRatiosQueryResults(api, r, marginTierRatiosTable, userAssets[j].AssetIndex,
 				userMarginCollateral,
 				userAssets[j].MarginCollateralIndex,
 				userAssets[j].MarginCollateralFlag,
 				assetPriceResponses[j],
-				flattenTierRatiosLength)
+				flattenTierRatiosLength,
+				utils.TierCount-1)
 
 			portfolioMarginRealValue := getAndCheckTierRatiosQueryResults(api, r, portfolioMarginTierRatiosTable, userAssets[j].AssetIndex,
 				userPortfolioMarginCollateral,
 				userAssets[j].PortfolioMarginCollateralIndex,
 				userAssets[j].PortfolioMarginCollateralFlag,
 				assetPriceResponses[j],
-				flattenTierRatiosLength)
+				flattenTierRatiosLength,
+				utils.TierCount-1)
 
 			totalUserCollateralRealValue = api.Add(totalUserCollateralRealValue, loanRealValue, marginRealValue, portfolioMarginRealValue)
 

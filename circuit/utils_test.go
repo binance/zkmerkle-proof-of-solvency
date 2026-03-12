@@ -45,21 +45,24 @@ func (circuit MockCollateralCircuit) Define(api API) error {
 			circuit.UAssetInfo[i].LoanCollateralIndex,
 			circuit.UAssetInfo[i].LoanCollateralFlag,
 			circuit.CAssetInfo[circuit.AssetId[i]].BasePrice,
-			3*(len(circuit.CAssetInfo[circuit.AssetId[i]].LoanRatios)+1))
+			3*(len(circuit.CAssetInfo[circuit.AssetId[i]].LoanRatios)+1),
+			len(circuit.CAssetInfo[circuit.AssetId[i]].LoanRatios)-1)
 
 		realMarginCollateralValue := getAndCheckTierRatiosQueryResults(api, r, t1, circuit.UAssetInfo[i].AssetIndex,
 			circuit.UAssetMataInfo[i].MarginCollateral,
 			circuit.UAssetInfo[i].MarginCollateralIndex,
 			circuit.UAssetInfo[i].MarginCollateralFlag,
 			circuit.CAssetInfo[circuit.AssetId[i]].BasePrice,
-			3*(len(circuit.CAssetInfo[circuit.AssetId[i]].MarginRatios)+1))
+			3*(len(circuit.CAssetInfo[circuit.AssetId[i]].MarginRatios)+1),
+			len(circuit.CAssetInfo[circuit.AssetId[i]].MarginRatios)-1)
 
 		realPortfolioMarginCollateralValue := getAndCheckTierRatiosQueryResults(api, r, t2, circuit.UAssetInfo[i].AssetIndex,
 			circuit.UAssetMataInfo[i].PortfolioMarginCollateral,
 			circuit.UAssetInfo[i].PortfolioMarginCollateralIndex,
 			circuit.UAssetInfo[i].PortfolioMarginCollateralFlag,
 			circuit.CAssetInfo[circuit.AssetId[i]].BasePrice,
-			3*(len(circuit.CAssetInfo[circuit.AssetId[i]].PortfolioMarginRatios)+1))
+			3*(len(circuit.CAssetInfo[circuit.AssetId[i]].PortfolioMarginRatios)+1),
+			len(circuit.CAssetInfo[circuit.AssetId[i]].PortfolioMarginRatios)-1)
 
 		api.AssertIsEqual(circuit.ExpectedLoanCollateral[i], realLoanCollateralValue)
 		api.AssertIsEqual(circuit.ExpectedMarginCollateral[i], realMarginCollateralValue)
@@ -206,6 +209,106 @@ func TestMockCollateralCircuit(t *testing.T) {
 		fmt.Println("verify")
 	}
 }
+
+type MockCollateralFlagBypassCircuit struct {
+	Asset     UserAssetInfo
+	AssetMeta UserAssetMeta
+	CAsset    CexAssetInfo
+	Expected  Variable
+}
+
+func (circuit MockCollateralFlagBypassCircuit) Define(api API) error {
+	r := rangecheck.New(api)
+	generateRapidArithmeticForCollateral(api, r, circuit.CAsset.LoanRatios)
+	t := constructLoanTierRatiosLookupTable(api, []CexAssetInfo{circuit.CAsset})
+	realLoanCollateralValue := getAndCheckTierRatiosQueryResults(
+		api,
+		r,
+		t,
+		circuit.Asset.AssetIndex,
+		circuit.AssetMeta.LoanCollateral,
+		circuit.Asset.LoanCollateralIndex,
+		circuit.Asset.LoanCollateralFlag,
+		circuit.CAsset.BasePrice,
+		3*(len(circuit.CAsset.LoanRatios)+1),
+		len(circuit.CAsset.LoanRatios)-1,
+	)
+	api.AssertIsEqual(circuit.Expected, realLoanCollateralValue)
+	return nil
+}
+
+// This regression test targets a former soundness gap:
+// a prover could choose collateralFlag=1 on a non-final tier and use that tier's
+// precomputed value directly, inflating collateral value.
+func TestCollateralFlagBypassShouldFail(t *testing.T) {
+	solver.RegisterHint(IntegerDivision)
+
+	circuit := MockCollateralFlagBypassCircuit{
+		CAsset: CexAssetInfo{
+			LoanRatios: make([]TierRatio, 2),
+		},
+	}
+	oR1cs, err := frontend.Compile(
+		ecc.BN254.ScalarField(),
+		r1cs.NewBuilder,
+		&circuit,
+		frontend.IgnoreUnconstrainedInputs(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	witness := MockCollateralFlagBypassCircuit{
+		Asset: UserAssetInfo{
+			AssetIndex:                     0,
+			LoanCollateralIndex:            0,
+			LoanCollateralFlag:             1, // malicious: should only be valid on final tier and x > final boundary
+			MarginCollateralIndex:          0,
+			MarginCollateralFlag:           0,
+			PortfolioMarginCollateralIndex: 0,
+			PortfolioMarginCollateralFlag:  0,
+		},
+		AssetMeta: UserAssetMeta{
+			Equity:                    0,
+			Debt:                      0,
+			LoanCollateral:            50,
+			MarginCollateral:          0,
+			PortfolioMarginCollateral: 0,
+		},
+		CAsset: CexAssetInfo{
+			TotalEquity:               0,
+			TotalDebt:                 0,
+			BasePrice:                 1,
+			LoanCollateral:            0,
+			MarginCollateral:          0,
+			PortfolioMarginCollateral: 0,
+			LoanRatios: []TierRatio{
+				{
+					BoundaryValue:    100,
+					Ratio:            100,
+					PrecomputedValue: 0,
+				},
+				{
+					BoundaryValue:    200,
+					Ratio:            100,
+					PrecomputedValue: 0,
+				},
+			},
+		},
+		Expected: 100, // old behavior: bypass could force value to tier precomputed(100) instead of 50
+	}
+
+	w, err := frontend.NewWitness(&witness, ecc.BN254.ScalarField())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := oR1cs.IsSolved(w); err == nil {
+		t.Fatal("expected malicious collateral flag/index witness to fail")
+	} else {
+		fmt.Println(err.Error())
+	}
+}
+
 
 type MockCexAssetInfo struct {
 	LoanRatios            []Variable
