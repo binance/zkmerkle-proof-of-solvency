@@ -116,7 +116,7 @@ func (w *Witness) Run() {
 	// Start pipeline stages.
 	go w.WriteBatchWitnessToDB()
 
-	serializeWorkers := max(runtime.NumCPU() / 2, 2)
+	serializeWorkers := max(runtime.NumCPU()/2, 2)
 	jobCh := make(chan serializeJob, serializeWorkers)
 	// ordered queue: main loop appends done channels, collector reads them in order.
 	orderCh := make(chan chan BatchWitness, serializeWorkers)
@@ -205,7 +205,7 @@ func (w *Witness) Run() {
 		startBatchNum = endBatchNum
 	}
 
-	close(jobCh)  // signal workers to exit
+	close(jobCh)   // signal workers to exit
 	close(orderCh) // signal collector to exit after draining
 	<-w.quit
 	fmt.Printf("witness run finished, the account tree root is %x\n", w.accountTree.Root())
@@ -242,18 +242,74 @@ func (w *Witness) GetCexAssets(wit *BatchWitness) []utils.CexAssetInfo {
 }
 
 func (w *Witness) WriteBatchWitnessToDB() {
-	datas := make([]BatchWitness, 1)
-	for witness := range w.ch {
-		datas[0] = witness
-		err := w.witnessModel.CreateBatchWitness(datas)
+	const (
+		// Measured in local test: one witness row is ~312 KiB on average.
+		// Keep a practical default batch size for throughput.
+		defaultDBBatchSize = 25
+		// Safety cap for one INSERT payload. If exceeded, degrade to single-row writes.
+		maxInsertPayloadBytes = 16 * 1024 * 1024
+	)
+	dbBatchSize := defaultDBBatchSize
+
+	estimateBatchSize := func(batch []BatchWitness) int {
+		totalSize := 0
+		for _, row := range batch {
+			totalSize += len(row.WitnessData)
+		}
+		return totalSize
+	}
+
+	persist := func(rows []BatchWitness) {
+		err := w.witnessModel.CreateBatchWitness(rows)
 		if err != nil {
 			panic("create batch witness failed " + err.Error())
 		}
-		atomic.StoreInt64(&w.currentBatchNumber, witness.Height)
-		if witness.Height%100 == 0 {
-			fmt.Println("save batch ", witness.Height, " to db")
+		last := rows[len(rows)-1]
+		atomic.StoreInt64(&w.currentBatchNumber, last.Height)
+		if last.Height%100 == 0 {
+			fmt.Println("save batch ", last.Height, " to db")
 		}
 	}
+
+	flush := func(batch []BatchWitness) {
+		if len(batch) == 0 {
+			return
+		}
+		totalSize := estimateBatchSize(batch)
+		if totalSize > maxInsertPayloadBytes && dbBatchSize != 1 {
+			dbBatchSize = 1
+			fmt.Printf("witness DB payload %d bytes exceeds 16MB, fallback dbBatchSize=1\n", totalSize)
+		}
+
+		if dbBatchSize == 1 && len(batch) > 1 {
+			for i := range batch {
+				row := batch[i : i+1]
+				if len(row[0].WitnessData) > maxInsertPayloadBytes {
+					fmt.Printf("warning: single witness payload still exceeds 16MB at height %d\n", row[0].Height)
+				}
+				persist(row)
+			}
+			return
+		}
+
+		if totalSize > maxInsertPayloadBytes {
+			fmt.Printf("warning: single INSERT payload still exceeds 16MB (%d bytes)\n", totalSize)
+		}
+		persist(batch)
+	}
+
+	batch := make([]BatchWitness, 0, defaultDBBatchSize)
+	for witness := range w.ch {
+		batch = append(batch, witness)
+		if len(batch) < dbBatchSize {
+			continue
+		}
+		flush(batch)
+		batch = batch[:0]
+	}
+
+	// Flush remaining rows when input channel is closed.
+	flush(batch)
 	w.quit <- 0
 }
 

@@ -49,6 +49,7 @@ func main() {
 		totalAccountNum += len(v)
 		fmt.Println("the asset counts of user is ", k, "total ops number is ", len(v))
 	}
+	fmt.Println("total account num before padding:", totalAccountNum)
 
 	// Padding accounts to align with batch sizes.
 	keys := make([]int, 0, len(accounts))

@@ -18,18 +18,18 @@ import (
 // and writes them to MySQL. It adapts the standalone userproof service
 // (Mode 2 logic) to run within the witness package.
 type UserProofService struct {
-	accountTree    *merkletree.FixedDepthMerkleTree
-	accounts       map[int][]utils.AccountInfo
-	userProofModel UserProofModel
+	accountTree           *merkletree.FixedDepthMerkleTree
+	accounts              map[int][]utils.AccountInfo
+	userProofModel        UserProofModel
 }
 
 // NewUserProofService creates a new UserProofService.
 func NewUserProofService(accountTree *merkletree.FixedDepthMerkleTree,
 	accounts map[int][]utils.AccountInfo, db *gorm.DB, dbSuffix string) *UserProofService {
 	return &UserProofService{
-		accountTree:    accountTree,
-		accounts:       accounts,
-		userProofModel: NewUserProofModel(db, dbSuffix),
+		accountTree:           accountTree,
+		accounts:              accounts,
+		userProofModel:        NewUserProofModel(db, dbSuffix),
 	}
 }
 
@@ -156,9 +156,9 @@ func (s *UserProofService) Run() {
 	totalWritten := <-quit
 
 	fmt.Println("total write", totalWritten)
-	if currentAccountCounts != totalAccountCounts {
-		fmt.Println("totalCounts actual:expected", currentAccountCounts, totalAccountCounts)
-		panic("mismatch num")
+	if currentAccountCounts != totalAccountCounts || totalWritten != totalAccountCounts {
+		fmt.Println("The mismatched counts: ", currentAccountCounts, totalAccountCounts, totalWritten)
+		panic("mismatch totalAccountCounts and totalWritten")
 	}
 	fmt.Println("userproof service run finished...")
 }
@@ -204,25 +204,71 @@ func convertAccount(account *utils.AccountInfo, leafHash []byte, proof [][]byte,
 	return &userProof
 }
 
+func estimateUserProofPayloadBytes(row UserProof) int {
+	// The major payload fields are strings. Keep a small headroom for fixed-size
+	// scalar fields and SQL syntax overhead, then flush before exceeding threshold.
+	const rowOverheadBytes = 128
+	return rowOverheadBytes +
+		len(row.AccountId) +
+		len(row.AccountLeafHash) +
+		len(row.TotalEquity) +
+		len(row.TotalDebt) +
+		len(row.TotalCollateral) +
+		len(row.Assets) +
+		len(row.Proof) +
+		len(row.Config)
+}
+
 // writeUserProofDB receives ordered segments of user proofs via segCh and
-// batch-writes them to MySQL (dbBatchSize per DB call). Sends totalWritten
-// to quit when done.
+// batch-writes them to MySQL. Flushes when accumulated payload reaches 4 MiB.
+// Sends totalWritten to quit when done.
 func writeUserProofDB(segCh <-chan []UserProof, userProofModel UserProofModel, quit chan<- int, totalWritten int) {
-	const dbBatchSize = 100
+	const maxBatchPayloadBytes = 4 * 1024 * 1024
+
+	pending := make([]UserProof, 0, 1024)
+	pendingPayloadBytes := 0
+
+	flush := func() {
+		if len(pending) == 0 {
+			return
+		}
+		if err := userProofModel.CreateUserProofs(pending); err != nil {
+			panic(err.Error())
+		}
+		totalWritten += len(pending)
+		if totalWritten%100000 == 0 {
+			fmt.Println("write", totalWritten, "proof to db")
+		}
+		pending = pending[:0]
+		pendingPayloadBytes = 0
+	}
+
 	for proofs := range segCh {
-		for i := 0; i < len(proofs); i += dbBatchSize {
-			end := i + dbBatchSize
-			if end > len(proofs) {
-				end = len(proofs)
+		for i := 0; i < len(proofs); i++ {
+			row := proofs[i]
+			rowPayloadBytes := estimateUserProofPayloadBytes(row)
+
+			if len(pending) > 0 && pendingPayloadBytes+rowPayloadBytes > maxBatchPayloadBytes {
+				flush()
 			}
-			if err := userProofModel.CreateUserProofs(proofs[i:end]); err != nil {
-				panic(err.Error())
+
+			// If one row itself is bigger than threshold, write it alone.
+			if rowPayloadBytes > maxBatchPayloadBytes {
+				if err := userProofModel.CreateUserProofs([]UserProof{row}); err != nil {
+					panic(err.Error())
+				}
+				totalWritten += 1
+				if totalWritten%100000 == 0 {
+					fmt.Println("write", totalWritten, "proof to db")
+				}
+				continue
 			}
-			totalWritten += end - i
-			if totalWritten%100000 == 0 {
-				fmt.Println("write", totalWritten, "proof to db")
-			}
+
+			pending = append(pending, row)
+			pendingPayloadBytes += rowPayloadBytes
 		}
 	}
+
+	flush()
 	quit <- totalWritten
 }
