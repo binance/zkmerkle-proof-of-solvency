@@ -1,6 +1,7 @@
 package witness
 
 import (
+	"fmt"
 	"math/big"
 
 	"github.com/binance/zkmerkle-proof-of-solvency/src/utils"
@@ -14,6 +15,12 @@ type (
 		CreateUserProofTable() error
 		DropUserProofTable() error
 		CreateUserProofs(rows []UserProof) error
+		// CreateAccountIdIndex adds a non-unique index on account_id after all
+		// rows have been inserted. AccountId is a Poseidon hash of user data,
+		// so duplicates are practically impossible; a uniqueness constraint is
+		// unnecessary. Building the index in one pass (sort + bulk-load) is far
+		// cheaper than maintaining it during 100M+ row inserts.
+		CreateAccountIdIndex() error
 		GetUserProofByIndex(id uint32) (*UserProof, error)
 		GetUserProofById(id string) (*UserProof, error)
 		GetLatestAccountIndex() (uint32, error)
@@ -25,9 +32,15 @@ type (
 		DB    *gorm.DB
 	}
 
+	// UserProof stores a per-user Merkle inclusion proof.
+	// account_id has no unique index because the table holds ~100M rows and
+	// maintaining a unique B-tree on random hash strings causes severe random
+	// I/O once the index exceeds the InnoDB buffer pool, degrading bulk-insert
+	// throughput. The index is created after all rows are written instead
+	// (see UserProofModel.CreateAccountIdIndex).
 	UserProof struct {
 		AccountIndex    uint32 `gorm:"index:idx_int,unique"`
-		AccountId       string `gorm:"index:idx_str,unique"`
+		AccountId       string `gorm:"type:varchar(64)"`
 		AccountLeafHash string
 		TotalEquity     string
 		TotalDebt       string
@@ -66,6 +79,11 @@ func (m *defaultUserProofModel) CreateUserProofTable() error {
 
 func (m *defaultUserProofModel) DropUserProofTable() error {
 	return m.DB.Migrator().DropTable(m.table)
+}
+
+func (m *defaultUserProofModel) CreateAccountIdIndex() error {
+	sql := fmt.Sprintf("ALTER TABLE `%s` ADD INDEX `idx_str` (`account_id`)", m.table)
+	return m.DB.Exec(sql).Error
 }
 
 func (m *defaultUserProofModel) CreateUserProofs(rows []UserProof) error {

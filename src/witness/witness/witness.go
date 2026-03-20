@@ -259,6 +259,7 @@ func (w *Witness) WriteBatchWitnessToDB() {
 		return totalSize
 	}
 
+	var lastLoggedHeight int64 = -1
 	persist := func(rows []BatchWitness) {
 		err := w.witnessModel.CreateBatchWitness(rows)
 		if err != nil {
@@ -266,8 +267,9 @@ func (w *Witness) WriteBatchWitnessToDB() {
 		}
 		last := rows[len(rows)-1]
 		atomic.StoreInt64(&w.currentBatchNumber, last.Height)
-		if last.Height%100 == 0 {
+		if last.Height/100 > lastLoggedHeight/100 {
 			fmt.Println("save batch ", last.Height, " to db")
+			lastLoggedHeight = last.Height
 		}
 	}
 

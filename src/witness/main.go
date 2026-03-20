@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"sort"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/binance/zkmerkle-proof-of-solvency/src/utils"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/utils/merkletree"
@@ -123,9 +125,34 @@ func buildAccountTree(tree *merkletree.FixedDepthMerkleTree, accounts map[int][]
 
 	total := 0
 	for _, k := range keys {
+		total += len(accounts[k])
+	}
+	fmt.Printf("buildAccountTree: total %d leaves to insert, workers=%d\n", total, workers)
+
+	var inserted atomic.Int64
+	startTime := time.Now()
+
+	// Log progress periodically in the background.
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				cur := inserted.Load()
+				elapsed := time.Since(startTime).Seconds()
+				fmt.Printf("buildAccountTree: inserted %d / %d leaves (%.1f%%), elapsed %.1fs\n",
+					cur, total, float64(cur)/float64(total)*100, elapsed)
+			}
+		}
+	}()
+
+	for _, k := range keys {
 		tierAccounts := accounts[k]
 		n := len(tierAccounts)
-		total += n
 
 		chunkSize := (n + workers - 1) / workers
 		var wg sync.WaitGroup
@@ -148,11 +175,15 @@ func buildAccountTree(tree *merkletree.FixedDepthMerkleTree, accounts map[int][]
 						panic(fmt.Sprintf("failed to set account %d: %v", accs[i].AccountIndex, err))
 					}
 				}
+				inserted.Add(int64(end - start))
 			}(tierAccounts, start, end)
 		}
 		wg.Wait()
 	}
+	close(done)
 
+	fmt.Printf("buildAccountTree: all %d leaves inserted, elapsed %.1fs. Building tree...\n",
+		inserted.Load(), time.Since(startTime).Seconds())
 	tree.Build()
-	fmt.Println("account tree built with", total, "accounts")
+	fmt.Printf("buildAccountTree: tree built, total elapsed %.1fs\n", time.Since(startTime).Seconds())
 }

@@ -160,6 +160,17 @@ func (s *UserProofService) Run() {
 		fmt.Println("The mismatched counts: ", currentAccountCounts, totalAccountCounts, totalWritten)
 		panic("mismatch totalAccountCounts and totalWritten")
 	}
+
+	// Build the account_id index after all rows are written.
+	// A post-insert ALTER TABLE uses sort + bulk-load which is orders of
+	// magnitude faster than maintaining the B-tree during 100M+ random inserts.
+	fmt.Println("creating account_id index (this may take a while)...")
+	indexStart := time.Now()
+	if err := s.userProofModel.CreateAccountIdIndex(); err != nil {
+		panic("create account_id index failed: " + err.Error())
+	}
+	fmt.Printf("account_id index created, took %v\n", time.Since(indexStart))
+
 	fmt.Println("userproof service run finished...")
 }
 
@@ -172,17 +183,6 @@ func convertAccount(account *utils.AccountInfo, leafHash []byte, proof [][]byte,
 	userProof.AccountId = hex.EncodeToString(account.AccountId)
 	userProof.AccountLeafHash = hex.EncodeToString(leafHash)
 
-	proofSerial, err := json.Marshal(proof)
-	if err != nil {
-		panic(err.Error())
-	}
-	userProof.Proof = string(proofSerial)
-
-	assets, err := json.Marshal(account.Assets)
-	if err != nil {
-		panic(err.Error())
-	}
-	userProof.Assets = string(assets)
 	userProof.TotalDebt = account.TotalDebt.String()
 	userProof.TotalEquity = account.TotalEquity.String()
 	userProof.TotalCollateral = account.TotalCollateral.String()
@@ -227,6 +227,14 @@ func writeUserProofDB(segCh <-chan []UserProof, userProofModel UserProofModel, q
 
 	pending := make([]UserProof, 0, 1024)
 	pendingPayloadBytes := 0
+	lastLoggedWritten := totalWritten - totalWritten%100000
+
+	logProgress := func() {
+		if totalWritten/100000 > lastLoggedWritten/100000 {
+			fmt.Println("write", totalWritten, "proof to db")
+			lastLoggedWritten = totalWritten
+		}
+	}
 
 	flush := func() {
 		if len(pending) == 0 {
@@ -236,9 +244,7 @@ func writeUserProofDB(segCh <-chan []UserProof, userProofModel UserProofModel, q
 			panic(err.Error())
 		}
 		totalWritten += len(pending)
-		if totalWritten%100000 == 0 {
-			fmt.Println("write", totalWritten, "proof to db")
-		}
+		logProgress()
 		pending = pending[:0]
 		pendingPayloadBytes = 0
 	}
@@ -258,9 +264,7 @@ func writeUserProofDB(segCh <-chan []UserProof, userProofModel UserProofModel, q
 					panic(err.Error())
 				}
 				totalWritten += 1
-				if totalWritten%100000 == 0 {
-					fmt.Println("write", totalWritten, "proof to db")
-				}
+				logProgress()
 				continue
 			}
 

@@ -1,5 +1,5 @@
 {
-  "MysqlDataSource" : "zkpos:zkpos@123@tcp(127.0.0.1:3306)/zkpos?parseTime=true&readTimeout=10s",
+  "MysqlDataSource" : "zkpos:zkpos@123@tcp(127.0.0.1:3306)/zkpos?parseTime=true",
   "DbSuffix": "0",
   "UserDataFile": "./src/userdata"
 }
