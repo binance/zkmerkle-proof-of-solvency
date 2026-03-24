@@ -27,6 +27,7 @@ MYSQL_DATABASE="zkpos"
 MYSQL_ROOT_PASSWORD="zkpos@123"
 DB_SUFFIX="0"
 NUM_USER_PROOFS_TO_VERIFY=500
+witness_done_marker=/tmp/witness_done
 
 # Keygen file names derived from TEST_TIERS
 KEYGEN_FILES=(
@@ -45,6 +46,8 @@ cleanup() {
     # Remove config dir and proof csv only.
     rm -rf "${WORK_DIR}/config"
     log "Cleanup done (keygen files preserved in ${WORK_DIR})"
+    rm -f "$witness_done_marker"
+    log "Removed witness done marker if it existed"
 }
 
 wait_for_mysql() {
@@ -155,8 +158,21 @@ EOF
 )"
 
 cd "$WORK_DIR"
-ZKPOR_TEST_TIERS="$TEST_TIERS" ./witness
+ZKPOR_TEST_TIERS="$TEST_TIERS" ./witness -witness_done_marker "$witness_done_marker" &
+WITNESS_PID=$!
 cd "$PROJECT_ROOT"
+# Wait for witness generation to complete.
+while [ ! -f "$witness_done_marker" ]; do
+    if ! kill -0 $WITNESS_PID 2>/dev/null; then
+        # Process exited — check marker one last time in case it was created just before exit.
+        [ -f "$witness_done_marker" ] && break
+        echo "ERROR: witness process exited before witness generation completed"
+        exit 1
+    fi
+    sleep 1
+    log "Waiting for witness generation to complete..."
+done
+rm -f "$witness_done_marker"
 log "Witness complete"
 
 # --- Step 5: Push tasks to Redis ---
@@ -200,6 +216,9 @@ cd "$WORK_DIR"
 ZKPOR_TEST_TIERS="$TEST_TIERS" ./prover
 cd "$PROJECT_ROOT"
 log "Prover complete"
+
+wait $WITNESS_PID
+log "Witness and userproof process complete"
 
 # --- Step 7: Export proofs to CSV ---
 log_step "Step 7: Exporting proofs to CSV"

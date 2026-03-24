@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"runtime"
 	"sort"
 	"sync"
@@ -23,6 +24,7 @@ import (
 
 func main() {
 	remotePasswdConfig := flag.String("remote_password_config", "", "fetch password from aws secretsmanager")
+	witnessDoneMarker := flag.String("witness_done_marker", "", "path to marker file created when witness generation completes")
 	flag.Parse()
 	witnessConfig := &config.Config{}
 	content, err := ioutil.ReadFile("config/config.json")
@@ -107,6 +109,14 @@ func main() {
 		defer wg.Done()
 		witnessService.Run()
 		fmt.Println("witness service run finished...")
+		if *witnessDoneMarker != "" {
+			f, err := os.Create(*witnessDoneMarker)
+			if err != nil {
+				fmt.Printf("failed to create witness done marker: %v\n", err)
+			} else {
+				f.Close()
+			}
+		}
 	}()
 	go func() {
 		defer wg.Done()
