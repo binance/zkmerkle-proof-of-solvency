@@ -213,7 +213,9 @@ func main() {
 						panic("verify proof " + strconv.Itoa(batchNumber) + " failed")
 					}
 					bufRaw.Write(proofRaw)
-					proof.ReadFrom(&bufRaw)
+					if _, err = proof.ReadFrom(&bufRaw); err != nil {
+						panic("deserialize proof " + strconv.Itoa(batchNumber) + " failed: " + err.Error())
+					}
 					// deserialize cex asset list commitment and account tree root
 					cexAssetListCommitments := make([][]byte, 2)
 					for p := 0; p < len(proofs[j].CexAssetCommitment); p++ {
