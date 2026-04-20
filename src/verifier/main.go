@@ -259,14 +259,6 @@ func main() {
 						fmt.Printf("%x:%x\n", expectHash, actualHash)
 						panic("verify proof " + strconv.Itoa(batchNumber) + " failed")
 					}
-					safeProofMap.Lock()
-					safeProofMap.proofMap[int(batchNumber)] = ProofMetaData{
-						accountTreeRoot:         accountTreeRoot,
-						cexAssetListCommitments: cexAssetListCommitments,
-						minAccountIndex:         proofs[j].MinAccountIndex,
-						maxAccountIndex:         proofs[j].MaxAccountIndex,
-					}
-					safeProofMap.Unlock()
 					verifyWitness := circuit.NewVerifyBatchCreateUserCircuit(actualHash)
 					vWitness, err := frontend.NewWitness(verifyWitness, ecc.BN254.ScalarField(), frontend.PublicOnly())
 					if err != nil {
@@ -292,10 +284,18 @@ func main() {
 					err = groth16.Verify(proof, vk, vWitness)
 					if err != nil {
 						fmt.Println("proof verify failed:", batchNumber, err.Error())
-						return
-					} else {
-						fmt.Println("proof verify success", batchNumber)
+						panic("groth16 verification failed for batch " + strconv.Itoa(batchNumber) + ": " + err.Error())
 					}
+					fmt.Println("proof verify success", batchNumber)
+					// Only write to map after successful verification
+					safeProofMap.Lock()
+					safeProofMap.proofMap[int(batchNumber)] = ProofMetaData{
+						accountTreeRoot:         accountTreeRoot,
+						cexAssetListCommitments: cexAssetListCommitments,
+						minAccountIndex:         proofs[j].MinAccountIndex,
+						maxAccountIndex:         proofs[j].MaxAccountIndex,
+					}
+					safeProofMap.Unlock()
 				}
 
 			}(i)
