@@ -1,19 +1,16 @@
 package circuit
 
 import (
-	"fmt"
-	"testing"
-
-	// "github.com/binance/zkmerkle-proof-of-solvency/src/utils"
 	"bytes"
 	"encoding/base64"
 	"encoding/gob"
+	"encoding/hex"
+	"fmt"
 	"math/big"
 	"math/rand"
-	"time"
-
-	"encoding/hex"
 	"os"
+	"testing"
+	"time"
 
 	"github.com/binance/zkmerkle-proof-of-solvency/src/utils"
 	"github.com/consensys/gnark-crypto/ecc"
@@ -27,25 +24,15 @@ import (
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
 	"github.com/consensys/gnark/frontend/cs/scs"
-	poseidon2 "github.com/consensys/gnark/std/hash/poseidon"
 	"github.com/consensys/gnark/test/unsafekzg"
 	"github.com/klauspost/compress/s2"
 )
 
-func ConstructR1csAndWitness(provingSystem string) (constraint.ConstraintSystem, witness.Witness, error) {
+func ConstructR1csAndWitness(provingSystem string, assetCountsTier int, userOpsPerBatch int) (constraint.ConstraintSystem, witness.Witness, error) {
 	solver.RegisterHint(IntegerDivision)
-	targetAssetCounts := 30
-	totalAssetsCount := 500
-	userOpsPerBatch := 1
+	totalAssetsCount := utils.AssetCounts
 
-	targetCircuitAssetCounts := 0
-	for _, v := range utils.AssetCountsTiers {
-		if targetAssetCounts <= v {
-			targetCircuitAssetCounts = v
-			break
-		}
-	}
-	emptyUserCircuit := NewBatchCreateUserCircuit(uint32(targetCircuitAssetCounts), uint32(totalAssetsCount), uint32(userOpsPerBatch))
+	emptyUserCircuit := NewBatchCreateUserCircuit(uint32(assetCountsTier), uint32(totalAssetsCount), uint32(userOpsPerBatch))
 	s := time.Now()
 	var builder frontend.NewBuilder
 	if provingSystem == "plonk" {
@@ -55,7 +42,7 @@ func ConstructR1csAndWitness(provingSystem string) (constraint.ConstraintSystem,
 	} else {
 		return nil, nil, fmt.Errorf("invalid proving system")
 	}
-	oR1cs, err := frontend.Compile(ecc.BN254.ScalarField(), builder, emptyUserCircuit, frontend.IgnoreUnconstrainedInputs())
+	oR1cs, err := frontend.Compile(ecc.BN254.ScalarField(), builder, emptyUserCircuit)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -63,7 +50,7 @@ func ConstructR1csAndWitness(provingSystem string) (constraint.ConstraintSystem,
 	fmt.Println("compile time is ", et.Sub(s))
 	fmt.Println("batch create user constraints number is ", oR1cs.GetNbConstraints())
 
-	userCircuit := ConstructValidBatch(targetAssetCounts, totalAssetsCount, userOpsPerBatch)
+	userCircuit := ConstructValidBatch(assetCountsTier, totalAssetsCount, userOpsPerBatch)
 
 	witness, e := frontend.NewWitness(userCircuit, ecc.BN254.ScalarField())
 	if witness == nil {
@@ -73,18 +60,23 @@ func ConstructR1csAndWitness(provingSystem string) (constraint.ConstraintSystem,
 }
 
 func TestBatchCreateUserCircuit(t *testing.T) {
-	oR1cs, witness, err := ConstructR1csAndWitness("groth16")
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = oR1cs.IsSolved(witness)
-	if err != nil {
-		t.Fatal(err)
+	for _, assetCountsTier := range utils.AssetCountsTiers {
+		userOpsPerBatch := 2
+		t.Run(fmt.Sprintf("assets_%d_users_%d", assetCountsTier, userOpsPerBatch), func(t *testing.T) {
+			oR1cs, witness, err := ConstructR1csAndWitness("groth16", assetCountsTier, userOpsPerBatch)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = oR1cs.IsSolved(witness)
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 
 func TestBatchCreateUserCircuitFromKeySetup(t *testing.T) {
-	oR1cs, witness, err := ConstructR1csAndWitness("groth16")
+	oR1cs, witness, err := ConstructR1csAndWitness("groth16", 50, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +108,7 @@ func TestBatchCreateUserCircuitFromKeySetup(t *testing.T) {
 }
 
 func TestBatchCreateUserCircuitFromPlonkKeySetup(t *testing.T) {
-	oScs, witness, err := ConstructR1csAndWitness("plonk")
+	oScs, witness, err := ConstructR1csAndWitness("plonk", 50, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +144,7 @@ func TestBatchCreateUserCircuitFromPlonkKeySetup(t *testing.T) {
 }
 
 func TestBatchCreateUserCircuitFromKeyFiles(t *testing.T) {
-	oR1cs, witness, err := ConstructR1csAndWitness("groth16")
+	oR1cs, witness, err := ConstructR1csAndWitness("groth16", 50, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +207,7 @@ func TestBatchCreateUserCircuitFromKeyFiles(t *testing.T) {
 func TestBatchCreateUserCircuitFromWitnessFile(t *testing.T) {
 	targetAssetCounts := 30
 	totalAssetsCount := 500
-	userOpsPerBatch := 1
+	userOpsPerBatch := 2
 	targetCircuitAssetCounts := 0
 	for _, v := range utils.AssetCountsTiers {
 		if targetAssetCounts <= v {
@@ -223,6 +215,9 @@ func TestBatchCreateUserCircuitFromWitnessFile(t *testing.T) {
 			break
 		}
 	}
+	fmt.Println("targetCircuitAssetCounts is ", targetCircuitAssetCounts)
+	fmt.Println("totalAssetsCount is ", totalAssetsCount)
+	fmt.Println("userOpsPerBatch is ", userOpsPerBatch)
 	userCircuit := NewBatchCreateUserCircuit(uint32(targetCircuitAssetCounts), uint32(totalAssetsCount), uint32(userOpsPerBatch))
 	s := time.Now()
 	oR1cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, userCircuit, frontend.IgnoreUnconstrainedInputs())
@@ -292,11 +287,6 @@ func ConstructBatchFromFile(fileName string) (witness *BatchCreateUserCircuit) {
 }
 
 func ConstructValidBatch(assetsCount int, totalAssetsCount int, userOpsPerBatch int) (witness *BatchCreateUserCircuit) {
-	accountTree, err := utils.NewAccountTree("memory", "")
-	if err != nil {
-		panic(err.Error())
-	}
-	beforeAccountRoot := accountTree.Root()
 	// construct cex assets
 	cexAssets := make([]utils.CexAssetInfo, totalAssetsCount)
 	for i := 0; i < totalAssetsCount; i++ {
@@ -331,10 +321,10 @@ func ConstructValidBatch(assetsCount int, totalAssetsCount int, userOpsPerBatch 
 	gap := totalAssetsCount / assetsCount
 	// construct accounts
 	accounts := make([]utils.AccountInfo, userOpsPerBatch)
+
 	batchCreateUserWit := &utils.BatchCreateUserWitness{
-		BeforeAccountTreeRoot: beforeAccountRoot,
-		BeforeCexAssets:       make([]utils.CexAssetInfo, totalAssetsCount),
-		CreateUserOps:         make([]utils.CreateUserOperation, userOpsPerBatch),
+		BeforeCexAssets: make([]utils.CexAssetInfo, totalAssetsCount),
+		CreateUserOps:   make([]utils.CreateUserOperation, userOpsPerBatch),
 	}
 	for i := 0; i < totalAssetsCount; i++ {
 		batchCreateUserWit.BeforeCexAssets[i] = cexAssets[i]
@@ -343,7 +333,7 @@ func ConstructValidBatch(assetsCount int, totalAssetsCount int, userOpsPerBatch 
 
 	for i := 0; i < len(accounts); i++ {
 		accounts[i] = utils.AccountInfo{
-			AccountIndex: uint32(i * 10),
+			AccountIndex: uint32(i),
 			AccountId:    make([]byte, 32),
 		}
 		rand.Read(accounts[i].AccountId)
@@ -384,31 +374,52 @@ func ConstructValidBatch(assetsCount int, totalAssetsCount int, userOpsPerBatch 
 		accounts[i].TotalEquity = totalEquity
 		accounts[i].TotalDebt = totalDebt
 		accounts[i].TotalCollateral = totalCollateral
+	}
+
+	// Build the account tree using the two-phase approach
+	accountTree, err := utils.NewAccountTree(userOpsPerBatch)
+	if err != nil {
+		panic(err.Error())
+	}
+	for i := 0; i < len(accounts); i++ {
 		poseidonHasher := poseidon.NewPoseidon()
-		accountBeforeRoot := accountTree.Root()
-		accountProof, err := accountTree.GetProof(uint64(accounts[i].AccountIndex))
+		accountHash := utils.AccountInfoToHash(&accounts[i], &poseidonHasher)
+		accountTree.Set(accounts[i].AccountIndex, accountHash)
+	}
+	accountTree.Build()
+
+	// Get proofs from the built tree
+	for i := 0; i < len(accounts); i++ {
+		accountProof, err := accountTree.GetProof(accounts[i].AccountIndex)
 		if err != nil {
 			panic(err.Error())
 		}
-		accountTree.Set(uint64(accounts[i].AccountIndex), utils.AccountInfoToHash(&accounts[i], &poseidonHasher))
-		accountAfterRoot := accountTree.Root()
 		batchCreateUserWit.CreateUserOps[i] = utils.CreateUserOperation{
-			BeforeAccountTreeRoot: accountBeforeRoot,
-			AfterAccountTreeRoot:  accountAfterRoot,
-			Assets:                accounts[i].Assets,
-			AccountIndex:          accounts[i].AccountIndex,
-			AccountIdHash:         accounts[i].AccountId,
+			Assets:        accounts[i].Assets,
+			AccountIndex:  accounts[i].AccountIndex,
+			AccountIdHash: accounts[i].AccountId,
 		}
 		copy(batchCreateUserWit.CreateUserOps[i].AccountProof[:], accountProof[:])
-
 	}
 
-	batchCreateUserWit.AfterAccountTreeRoot = accountTree.Root()
+	batchCreateUserWit.AccountTreeRoot = accountTree.Root()
 	batchCreateUserWit.AfterCEXAssetsCommitment = utils.ComputeCexAssetsCommitment(cexAssets)
-	batchCreateUserWit.BatchCommitment = poseidon.PoseidonBytes(batchCreateUserWit.BeforeAccountTreeRoot,
-		batchCreateUserWit.AfterAccountTreeRoot,
+	batchCreateUserWit.MinAccountIndex = accounts[0].AccountIndex
+	batchCreateUserWit.MaxAccountIndex = accounts[len(accounts)-1].AccountIndex
+	minBytes := new(big.Int).SetUint64(uint64(batchCreateUserWit.MinAccountIndex)).Bytes()
+	if len(minBytes) == 0 {
+		minBytes = []byte{0}
+	}
+	maxBytes := new(big.Int).SetUint64(uint64(batchCreateUserWit.MaxAccountIndex)).Bytes()
+	if len(maxBytes) == 0 {
+		maxBytes = []byte{0}
+	}
+	batchCreateUserWit.BatchCommitment = poseidon.PoseidonBytes(
+		batchCreateUserWit.AccountTreeRoot,
 		batchCreateUserWit.BeforeCEXAssetsCommitment,
-		batchCreateUserWit.AfterCEXAssetsCommitment)
+		batchCreateUserWit.AfterCEXAssetsCommitment,
+		minBytes,
+		maxBytes)
 	var serializeBuf bytes.Buffer
 	enc := gob.NewEncoder(&serializeBuf)
 	err = enc.Encode(batchCreateUserWit)
@@ -435,26 +446,4 @@ func TestSetBatchCreateUserCircuitWitness(t *testing.T) {
 	fmt.Println("assets info ", circuitWitness.CreateUserOps[0].Assets[0].LoanCollateralIndex)
 	fmt.Println("assets info ", circuitWitness.CreateUserOps[0].Assets[0].MarginCollateralIndex)
 	fmt.Println("assets info ", circuitWitness.CreateUserOps[0].Assets[0].PortfolioMarginCollateralIndex)
-}
-
-type PoseidonCircuit struct {
-	Vs []Variable
-}
-
-func (c PoseidonCircuit) Define(api API) error {
-	v := poseidon2.Poseidon(api, c.Vs...)
-	api.AssertIsEqual(v, c.Vs[0])
-	return nil
-}
-
-func TestPoseidon(t *testing.T) {
-	circuit := PoseidonCircuit{
-		Vs: make([]frontend.Variable, 37),
-	}
-
-	r1cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit, frontend.IgnoreUnconstrainedInputs())
-	if err != nil {
-		t.Fatal(err)
-	}
-	fmt.Println("poseidon constraints number is ", r1cs.GetNbConstraints())
 }

@@ -54,11 +54,9 @@ type UserAssetMeta struct {
 }
 
 type CreateUserOperation struct {
-	BeforeAccountTreeRoot Variable
-	AfterAccountTreeRoot  Variable
-	Assets                []UserAssetInfo
-	AssetsForUpdateCex    []UserAssetMeta
-	AccountIndex          Variable
-	AccountIdHash         Variable
-	AccountProof          [utils.AccountTreeDepth]Variable
+	Assets             []UserAssetInfo
+	AssetsForUpdateCex []UserAssetMeta
+	AccountIndex       Variable
+	AccountIdHash      Variable
+	AccountProof       [utils.AccountTreeDepth]Variable
 }

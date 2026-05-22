@@ -14,3 +14,30 @@ src/keygen/zkpor*
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+
+# OS generated files
+.DS_Store
+
+# Log files
+*.log
+
+# User data
+src/userdata/
+src/sampledata/parse_invalid_user.py
+
+src/verifier/config/proof.csv
+
+# integration test data
+_integration_test/
+
+# witness recovery test data
+_recovery_test/
+
+# Design docs
+docs/plans/
+
+# ZK key files
+*.vk
+*.pk
+
+.claude

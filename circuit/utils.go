@@ -20,17 +20,6 @@ func verifyMerkleProof(api API, merkleRoot Variable, node Variable, proofSet, he
 	api.AssertIsEqual(merkleRoot, node)
 }
 
-func updateMerkleProof(api API, node Variable, proofSet, helper []Variable) (root Variable) {
-	for i := 0; i < len(proofSet); i++ {
-		api.AssertIsBoolean(helper[i])
-		d1 := api.Select(helper[i], proofSet[i], node)
-		d2 := api.Select(helper[i], node, proofSet[i])
-		node = poseidon.Poseidon(api, d1, d2)
-	}
-	root = node
-	return root
-}
-
 func accountIdToMerkleHelper(api API, accountId Variable) []Variable {
 	merkleHelpers := api.ToBinary(accountId, utils.AccountTreeDepth)
 	return merkleHelpers
@@ -51,6 +40,9 @@ func computeUserAssetsCommitment(api API, flattenAssets []Variable) Variable {
 	}
 	for i := remainderEles; i < 3; i++ {
 		lastEle = api.Mul(lastEle, utils.Uint64MaxValueFr)
+	}
+	if remainderEles > 0 {
+		tmpUserAssets[quotientEles] = lastEle
 	}
 	commitment := poseidon.Poseidon(api, tmpUserAssets...)
 	return commitment
@@ -118,12 +110,23 @@ func IntegerDivision(_ *big.Int, in []*big.Int, out []*big.Int) error {
 }
 
 func getAndCheckTierRatiosQueryResults(api API, r frontend.Rangechecker, tierRatiosTable *logderivlookup.Table,
-	assetIndex, userCollateral, collateralIndex, collateralFlag, assetPrice, collateralTierRatiosLen Variable) (collateralValueRes Variable) {
+	assetIndex, userCollateral, collateralIndex, collateralFlag, assetPrice, collateralTierRatiosLen, maxCollateralTierIndex Variable) (collateralValueRes Variable) {
+	// Constrain collateralIndex to [0, maxCollateralTierIndex] to prevent cross-asset lookup table access.
+	api.AssertIsLessOrEqualNOp(collateralIndex, maxCollateralTierIndex, 4)
+	// Constrain collateralFlag to boolean
+	api.AssertIsBoolean(collateralFlag)
+	// Constrain flag semantics:
+	// when collateralFlag == 1, collateralIndex must point to the last tier.
+	api.AssertIsEqual(api.Mul(collateralFlag, api.Sub(collateralIndex, maxCollateralTierIndex)), 0)
+
 	// All indexes are shifted by 1 overall because we add a dummy tier ratio at the beginning
 	// 18 = 3 * 6: 3 means the number of collateral types, 6 means the number of tier ratios queries for each collateral type
 	numOfTierRatioFields := 3
 	queries := make([]Variable, 6)
 	gap := api.Mul(assetIndex, collateralTierRatiosLen)
+	collateralValue := api.Mul(userCollateral, assetPrice)
+	// When cv == 0, collateralIndex must be 0 (the dummy tier slot).
+	api.AssertIsEqual(api.Mul(api.IsZero(collateralValue), collateralIndex), 0)
 	for i := 0; i < 2; i++ {
 		startPosition := api.Mul(collateralIndex, 3)
 		queries[i*numOfTierRatioFields+0] = api.Add(startPosition, gap)
@@ -132,15 +135,24 @@ func getAndCheckTierRatiosQueryResults(api API, r frontend.Rangechecker, tierRat
 		collateralIndex = api.Add(collateralIndex, 1)
 	}
 	results := tierRatiosTable.Lookup(queries...)
-	collateralValue := api.Mul(userCollateral, assetPrice)
-	// results[0] is less than 2^128 which is constrainted in the GenerateRapidArithmeticForCollateral
-	cr := api.CmpNOp(collateralValue, results[0], 128, true)
-	// cr only can be 0 or 1
-	// cr is 0 in the special case that userAssets.LoanCollateral is 0;
-	api.AssertIsEqual(cr, api.Select(api.IsZero(collateralValue), 0, 1))
-	// results[3] is the upper boundary value
-	upperBoundaryValue := api.Select(api.IsZero(collateralFlag), results[3], utils.MaxTierBoundaryValueFr)
-	api.AssertIsLessOrEqualNOp(collateralValue, upperBoundaryValue, 128, true)
+
+	// Lower bound: when cv != 0, cv must be strictly greater than results[0] (the lower tier boundary).
+	// cv > results[0] <-> (cv - results[0] - 1) is non-negative and fits in 128 bits.
+	// When cv == 0, the constraint above guarantees collateralIndex == 0 and results[0] == 0 (dummy).
+	lowerDiff := api.Sub(collateralValue, api.Add(results[0], 1))
+	r.Check(api.Select(api.IsZero(collateralValue), 0, lowerDiff), 128)
+
+	// Upper bound (merged check for both flag values):
+	//   flag=0: cv <= results[3]  <->  (results[3] - cv) fits in 128 bits
+	//   flag=1: cv >  results[3]  <->  (cv - results[3] - 1) fits in 128 bits
+	leqDiff := api.Sub(results[3], collateralValue)
+	gtDiff := api.Sub(collateralValue, api.Add(results[3], 1))
+	r.Check(api.Select(collateralFlag, gtDiff, leqDiff), 128)
+
+	// Keep the global cap for saturated branch:
+	// when flag=1, collateralValue must still be <= MaxTierBoundaryValue.
+	maxBoundaryDiff := api.Sub(utils.MaxTierBoundaryValueFr, collateralValue)
+	r.Check(api.Select(collateralFlag, maxBoundaryDiff, 0), 128)
 	// results[4] is ratio of upper boundary value
 	// diffValue = (collateralValue - lower boundary value) * ratio
 	diffValue := api.Mul(api.Sub(collateralValue, results[0]), results[4])
@@ -158,7 +170,8 @@ func checkAndGetIntegerDivisionRes(api API, r frontend.Rangechecker, dividend Va
 	}
 	r.Check(quotientRes[0], 128)
 	r.Check(quotientRes[1], 8)
-	api.AssertIsLessOrEqualNOp(quotientRes[1], utils.PercentageMultiplierFr, 8, true)
+	// remainder must satisfy 0 <= r < PercentageMultiplier
+	api.AssertIsEqual(api.CmpNOp(quotientRes[1], utils.PercentageMultiplierFr, 8, true), -1)
 	api.AssertIsEqual(api.Add(api.Mul(quotientRes[0], utils.PercentageMultiplierFr), quotientRes[1]), dividend)
 	return quotientRes[0]
 }
@@ -167,7 +180,7 @@ func constructLoanTierRatiosLookupTable(api API, cexAssetInfo []CexAssetInfo) *l
 	t := logderivlookup.New(api)
 	for i := 0; i < len(cexAssetInfo); i++ {
 		// dummy tier ratio
-		for i := 0; i < 3; i++ {
+		for range 3 {
 			t.Insert(0)
 		}
 		for j := 0; j < len(cexAssetInfo[i].LoanRatios); j++ {
@@ -183,7 +196,7 @@ func constructMarginTierRatiosLookupTable(api API, cexAssetInfo []CexAssetInfo) 
 	t := logderivlookup.New(api)
 	for i := 0; i < len(cexAssetInfo); i++ {
 		// dummy tier ratio
-		for i := 0; i < 3; i++ {
+		for range 3 {
 			t.Insert(0)
 		}
 		for j := 0; j < len(cexAssetInfo[i].MarginRatios); j++ {
@@ -199,7 +212,7 @@ func constructPortfolioTierRatiosLookupTable(api API, cexAssetInfo []CexAssetInf
 	t := logderivlookup.New(api)
 	for i := 0; i < len(cexAssetInfo); i++ {
 		// dummy tier ratio
-		for i := 0; i < 3; i++ {
+		for range 3 {
 			t.Insert(0)
 		}
 		for j := 0; j < len(cexAssetInfo[i].PortfolioMarginRatios); j++ {

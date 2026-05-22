@@ -41,20 +41,19 @@ type AccountInfo struct {
 }
 
 type CreateUserOperation struct {
-	BeforeAccountTreeRoot []byte
-	AfterAccountTreeRoot  []byte
-	Assets                []AccountAsset
-	AccountIndex          uint32
-	AccountIdHash         []byte
-	AccountProof          [AccountTreeDepth][]byte
+	Assets       []AccountAsset
+	AccountIndex uint32
+	AccountIdHash []byte
+	AccountProof  [AccountTreeDepth][]byte
 }
 
 type BatchCreateUserWitness struct {
 	BatchCommitment           []byte
-	BeforeAccountTreeRoot     []byte
-	AfterAccountTreeRoot      []byte
+	AccountTreeRoot           []byte
 	BeforeCEXAssetsCommitment []byte
 	AfterCEXAssetsCommitment  []byte
+	MinAccountIndex           uint32
+	MaxAccountIndex           uint32
 
 	BeforeCexAssets []CexAssetInfo
 	CreateUserOps   []CreateUserOperation

@@ -80,7 +80,7 @@ func (m *defaultWitnessModel) GetLatestBatchWitnessHeight() (batchNumber int64, 
 
 func (m *defaultWitnessModel) GetLatestBatchWitness() (witness *BatchWitness, err error) {
 	var height int64
-	dbTx := m.DB.Clauses(utils.MaxExecutionTimeHint).Table(m.table).Debug().Select("height").Order("height desc").Limit(1).Find(&height)
+	dbTx := m.DB.Clauses(utils.MaxExecutionTimeHint).Table(m.table).Select("height").Order("height desc").Limit(1).Find(&height)
 	if dbTx.Error != nil {
 		return nil, utils.ConvertMysqlErrToDbErr(dbTx.Error)
 	} else if dbTx.RowsAffected == 0 {

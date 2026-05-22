@@ -297,17 +297,6 @@ func ParseUserDataSet(dirname string) (map[int][]AccountInfo, []CexAssetInfo, er
 		for i := 0; i < len(userFileNames); i++ {
 			res := <-results[i%workersNum]
 			totalInvalidAccountNum += res.invalidAccNum
-			if i != 0 {
-				currentAccountIndex := 0
-				for _, v := range accountInfo {
-					currentAccountIndex += len(v)
-				}
-				for _, v := range res.accounts {
-					for k := 0; k < len(v); k++ {
-						v[k].AccountIndex += uint32(currentAccountIndex)
-					}
-				}
-			}
 			for k, v := range res.accounts {
 				if accountInfo[k] == nil {
 					accountInfo[k] = make([]AccountInfo, 0, len(v))
@@ -528,7 +517,6 @@ func ReadUserDataFromCsvFile(name string, cexAssetsInfo []CexAssetInfo) (map[int
 	if err != nil {
 		return nil, 0, err
 	}
-	accountIndex := 0
 	accounts := make(map[int][]AccountInfo)
 	// rn, id,
 	// equity_assetA, debt_assetA, assetA, assetA_loan, assetA_margin, assetA_portfolio_margin,
@@ -544,8 +532,6 @@ func ReadUserDataFromCsvFile(name string, cexAssetsInfo []CexAssetInfo) (map[int
 		account.TotalEquity = new(big.Int).SetInt64(0)
 		account.TotalDebt = new(big.Int).SetInt64(0)
 		account.TotalCollateral = new(big.Int).SetInt64(0)
-		// first element of data[i] is ID. we use accountIndex instead
-		account.AccountIndex = uint32(accountIndex)
 		accountId, err := hex.DecodeString(data[i][1])
 		if err != nil || len(accountId) != 32 {
 			panic("accountId is invalid: " + data[i][1])
@@ -632,7 +618,6 @@ func ReadUserDataFromCsvFile(name string, cexAssetsInfo []CexAssetInfo) (map[int
 		if !invalidAccountFlag {
 			account.Assets = assets
 			if account.TotalCollateral.Cmp(account.TotalDebt) >= 0 {
-				accountIndex += 1
 				for p := 0; p < len(AssetCountsTiers); p++ {
 					if len(account.Assets) <= AssetCountsTiers[p] {
 						if accounts[AssetCountsTiers[p]] == nil {
@@ -814,7 +799,7 @@ func ComputeCexAssetsCommitment(cexAssetsInfo []CexAssetInfo) []byte {
 	return hasher.Sum(nil)
 }
 
-func PaddingAccounts(accounts []AccountInfo, assetKey int, paddingStartIndex int) (int, []AccountInfo) {
+func PaddingAccounts(accounts []AccountInfo, assetKey int) []AccountInfo {
 	opsPerBatch := BatchCreateUserOpsCountsTiers[assetKey]
 	batchCounts := (len(accounts) + opsPerBatch - 1) / opsPerBatch
 	paddingAccountCounts := batchCounts*opsPerBatch - len(accounts)
@@ -831,15 +816,13 @@ func PaddingAccounts(accounts []AccountInfo, assetKey int, paddingStartIndex int
 			}
 		}
 		accounts = append(accounts, AccountInfo{
-			AccountIndex:    uint32(paddingStartIndex),
 			TotalEquity:     new(big.Int).SetInt64(0),
 			TotalDebt:       new(big.Int).SetInt64(0),
 			TotalCollateral: new(big.Int).SetInt64(0),
 			Assets:          assets,
 		})
-		paddingStartIndex += 1
 	}
-	return paddingStartIndex, accounts
+	return accounts
 }
 
 func ConvertMysqlErrToDbErr(err error) error {

@@ -180,9 +180,8 @@ func (p *Prover) Run(flag bool) {
 			cexAssetListCommitments := make([][]byte, 2)
 			cexAssetListCommitments[0] = witnessForCircuit.BeforeCEXAssetsCommitment
 			cexAssetListCommitments[1] = witnessForCircuit.AfterCEXAssetsCommitment
-			accountTreeRoots := make([][]byte, 2)
-			accountTreeRoots[0] = witnessForCircuit.BeforeAccountTreeRoot
-			accountTreeRoots[1] = witnessForCircuit.AfterAccountTreeRoot
+			accountTreeRoots := make([][]byte, 1)
+			accountTreeRoots[0] = witnessForCircuit.AccountTreeRoot
 			cexAssetListCommitmentsSerial, err := json.Marshal(cexAssetListCommitments)
 			if err != nil {
 				fmt.Println("marshal cex asset list failed: ", err.Error())
@@ -231,6 +230,8 @@ func (p *Prover) Run(flag bool) {
 				CexAssetListCommitments: string(cexAssetListCommitmentsSerial),
 				AccountTreeRoots:        string(accountTreeRootsSerial),
 				BatchCommitment:         base64.StdEncoding.EncodeToString(witnessForCircuit.BatchCommitment),
+				MinAccountIndex:         witnessForCircuit.MinAccountIndex,
+				MaxAccountIndex:         witnessForCircuit.MaxAccountIndex,
 				AssetsCount:             assetsCount,
 			}
 			err = p.proofModel.CreateProof(row)

@@ -27,7 +27,7 @@ func main() {
 	for k, v := range utils.BatchCreateUserOpsCountsTiers {
 		circuit := circuit.NewBatchCreateUserCircuit(uint32(k), utils.AssetCounts, uint32(v))
 		startTime := time.Now()
-		oR1cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, circuit, frontend.IgnoreUnconstrainedInputs())
+		oR1cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, circuit)
 		if err != nil {
 			panic(err)
 		}

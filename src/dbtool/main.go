@@ -12,9 +12,9 @@ import (
 
 	"github.com/binance/zkmerkle-proof-of-solvency/src/dbtool/config"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/prover/prover"
-	"github.com/binance/zkmerkle-proof-of-solvency/src/userproof/model"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/utils"
 	"github.com/binance/zkmerkle-proof-of-solvency/src/witness/witness"
+	"github.com/gocarina/gocsv"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -32,14 +32,14 @@ func main() {
 		panic(err.Error())
 	}
 
-	onlyFlushKvrocks := flag.Bool("only_delete_kvrocks", false, "only delete kvrocks")
-	deleteAllData := flag.Bool("delete_all", false, "delete kvrocks and mysql data")
+	deleteAllData := flag.Bool("delete_all", false, "delete mysql and redis data")
 	checkProverStatus := flag.Bool("check_prover_status", false, "check prover status")
 	remotePasswdConfig := flag.String("remote_password_config", "", "fetch password from aws secretsmanager")
 	queryCexAssetsConfig := flag.Bool("query_cex_assets", false, "query cex assets info")
 	queryWitnessData := flag.Int("query_witness_data", -1, "query witness data by height")
 	queryAccountData := flag.Int("query_account_data", -1, "query account data by index")
 	pushTaskToRedis := flag.Bool("push_task_to_redis", false, "push task to redis")
+	exportProofCSV := flag.String("export_proof_csv", "", "export proof table to csv file")
 
 	flag.Parse()
 
@@ -81,7 +81,7 @@ func main() {
 		}
 		fmt.Println("drop proof table successfully")
 
-		userProofModel := model.NewUserProofModel(db, dbtoolConfig.DbSuffix)
+		userProofModel := witness.NewUserProofModel(db, dbtoolConfig.DbSuffix)
 		err = userProofModel.DropUserProofTable()
 		if err != nil {
 			fmt.Println("drop userproof table failed")
@@ -96,22 +96,6 @@ func main() {
 		})
 		client.FlushAll(context.Background())
 		fmt.Println("redis data drop successfully")
-	}
-
-	if *deleteAllData || *onlyFlushKvrocks {
-		client := redis.NewClient(&redis.Options{
-			Addr:            dbtoolConfig.TreeDB.Option.Addr,
-			PoolSize:        500,
-			MaxRetries:      5,
-			MinRetryBackoff: 8 * time.Millisecond,
-			MaxRetryBackoff: 512 * time.Millisecond,
-			DialTimeout:     10 * time.Second,
-			ReadTimeout:     10 * time.Second,
-			WriteTimeout:    10 * time.Second,
-			PoolTimeout:     15 * time.Second,
-		})
-		client.FlushAll(context.Background())
-		fmt.Println("kvrocks data drop successfully")
 	}
 
 	if *checkProverStatus {
@@ -161,7 +145,9 @@ func main() {
 	}
 
 	if *queryCexAssetsConfig {
-		db, err := gorm.Open(mysql.Open(dbtoolConfig.MysqlDataSource))
+		db, err := gorm.Open(mysql.Open(dbtoolConfig.MysqlDataSource), &gorm.Config{
+			Logger: newLogger,
+		})
 		if err != nil {
 			panic(err.Error())
 		}
@@ -208,7 +194,7 @@ func main() {
 		if err != nil {
 			panic(err.Error())
 		}
-		userProofModel := model.NewUserProofModel(db, dbtoolConfig.DbSuffix)
+		userProofModel := witness.NewUserProofModel(db, dbtoolConfig.DbSuffix)
 
 		u, err := userProofModel.GetUserProofByIndex(uint32(*queryAccountData))
 		if err != nil {
@@ -262,5 +248,53 @@ func main() {
 			}
 		}
 		fmt.Println("push task to redis successfully")
+	}
+
+	if *exportProofCSV != "" {
+		db, err := gorm.Open(mysql.Open(dbtoolConfig.MysqlDataSource), &gorm.Config{
+			Logger: newLogger,
+		})
+		if err != nil {
+			panic(err.Error())
+		}
+		type ProofCSV struct {
+			BatchNumber             int64  `csv:"batch_number"`
+			ProofInfo               string `csv:"proof_info"`
+			CexAssetListCommitments string `csv:"cex_asset_list_commitments"`
+			AccountTreeRoots        string `csv:"account_tree_roots"`
+			BatchCommitment         string `csv:"batch_commitment"`
+			MinAccountIndex         uint32 `csv:"min_account_index"`
+			MaxAccountIndex         uint32 `csv:"max_account_index"`
+			AssetsCount             int    `csv:"assets_count"`
+		}
+		var proofs []prover.Proof
+		tableName := "proof" + dbtoolConfig.DbSuffix
+		result := db.Table(tableName).Order("batch_number").Find(&proofs)
+		if result.Error != nil {
+			panic(result.Error.Error())
+		}
+		csvProofs := make([]*ProofCSV, len(proofs))
+		for i, p := range proofs {
+			csvProofs[i] = &ProofCSV{
+				BatchNumber:             p.BatchNumber,
+				ProofInfo:               p.ProofInfo,
+				CexAssetListCommitments: p.CexAssetListCommitments,
+				AccountTreeRoots:        p.AccountTreeRoots,
+				BatchCommitment:         p.BatchCommitment,
+				MinAccountIndex:         p.MinAccountIndex,
+				MaxAccountIndex:         p.MaxAccountIndex,
+				AssetsCount:             p.AssetsCount,
+			}
+		}
+		f, err := os.Create(*exportProofCSV)
+		if err != nil {
+			panic(err.Error())
+		}
+		defer f.Close()
+		err = gocsv.MarshalFile(&csvProofs, f)
+		if err != nil {
+			panic(err.Error())
+		}
+		fmt.Printf("exported %d proofs to %s\n", len(proofs), *exportProofCSV)
 	}
 }

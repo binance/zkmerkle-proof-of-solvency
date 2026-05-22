@@ -2,13 +2,30 @@
 ## Circuit Design
 
 See the [technical blog](./docs/updated_proof_of_solvency_to_mitigate_dummy_user_attack.md) for more details about background and circuit design
+
+### Circuit Performance Benchmark
+
+#### Constraint Count
+
+| Component | Constraints |
+|-----------|------------|
+| Base (shared across all users in a batch) | ~6,630,000 |
+| Per user — 50-asset tier | ~42,300 |
+| Per user — 500-asset tier | ~281,200 |
+
+#### How `BatchCreateUserOpsCountsTiers` Is Determined
+
+The maximum constraint count supported by the underlying ZK algorithm (Groth16 over BN254 via gnark) is 2^28. We target 2^26 constraints per batch to leave a safety margin. The per-tier batch sizes are derived as follows:
+
+- **500-asset tier**: (2^26 − 6,630,000) / 281,200 ≈ 215 → rounded down to **200**
+- **50-asset tier**: (2^26 − 6,575,000) / 42,300 ≈ 1430 → rounded down to **1380**
+
 ## How to run
 
 ### Run third-party services
 This project needs following third party services:
 - mysql: used to store `witness`, `userproof`, `proof` table;
-- redis: provide distributed lock for multi provers;
-- kvrocks: used to store account tree
+- redis: used as task queue for distributing proof generation tasks to provers;
 
 We can use docker to run these services:
 
@@ -16,11 +33,9 @@ We can use docker to run these services:
 docker run -d --name zkpos-redis -p 6379:6379 redis
 
 docker run -d --name zkpos-mysql -p 3306:3306  -v /server/docker_data/mysql_data:/var/lib/mysql -e MYSQL_USER=zkpos -e MYSQL_PASSWORD=zkpos@123 -e MYSQL_DATABASE=zkpos  -e MYSQL_ROOT_PASSWORD=zkpos@123 mysql
-
-docker run -d --name zkpos-kvrocks -p 6666:6666 -v /server/docker_data/kvrocksdata:/kvrocksdata apache/kvrocks --dir /kvrocksdata
 ```
 
-where `/server/docker_data/` is directory in the host machine which is used to persist mysql and kvrocks docker data.
+where `/server/docker_data/` is directory in the host machine which is used to persist mysql docker data.
 
 
 ### Generate zk keys
@@ -36,30 +51,24 @@ cd src/keygen; go run main.go
 
 After `keygen` service finishes running, there will be several key files generated in the current directory, like the following:
 ```shell
--rw-r--r--. 1 root root  524 Aug 19 09:46 zkpor350_128.vk
--rw-r--r--. 1 root root  12G Aug 19 09:46 zkpor350_128.pk
--rw-r--r--. 1 root root 7.5G Aug 19 09:47 zkpor350_128.r1cs
--rw-r--r--. 1 root root  524 Aug 19 10:38 zkpor50_580.vk
--rw-r--r--. 1 root root  12G Aug 19 10:38 zkpor50_580.pk
--rw-r--r--. 1 root root  12G Aug 19 10:39 zkpor50_580.r1cs
+-rw-r--r--. 1 root root  524 Aug 19 09:46 zkpor500_200.vk
+-rw-r--r--. 1 root root  12G Aug 19 09:46 zkpor500_200.pk
+-rw-r--r--. 1 root root 7.5G Aug 19 09:47 zkpor500_200.r1cs
+-rw-r--r--. 1 root root  524 Aug 19 10:38 zkpor50_1380.vk
+-rw-r--r--. 1 root root  12G Aug 19 10:38 zkpor50_1380.pk
+-rw-r--r--. 1 root root  12G Aug 19 10:39 zkpor50_1380.r1cs
 ```
 
 ### Generate witness
 
-The `witness` service is used to generate witness for `prover` service. 
+The `witness` service is used to generate witness for `prover` service and user merkle proofs for user verification. The account tree is built entirely in memory using a fixed-depth Merkle tree.
 
 `witness/config/config.json` is the config file `witness` service use. The sample file is as follows:
 ```json
 {
   "MysqlDataSource" : "zkpos:zkpos@123@tcp(127.0.0.1:3306)/zkpos?parseTime=true",
   "UserDataFile": "/server/data/20230118",
-  "DbSuffix": "0",
-  "TreeDB": {
-    "Driver": "redis",
-    "Option": {
-      "Addr": "127.0.0.1:6666"
-    }
-  }
+  "DbSuffix": "0"
 }
 ```
 
@@ -68,10 +77,6 @@ Where
 - `MysqlDataSource`: this is the mysql config;
 - `UserDataFile`: the directory which contains all users balance sheet files;
 - `DbSuffix`: this suffix will be appended to the ending of table name, such as `proof0`, `witness0` table;
-- `TreeDB`:
-  - `Driver`: `redis` means account tree use kvrocks as its storage engine;
-  - `Option`:
-    - `Addr`: `kvrocks` service listen address
 
 
 Run the following command to start `witness` service:
@@ -79,9 +84,9 @@ Run the following command to start `witness` service:
 cd witness; go run main.go
 ```
 
-The `witness` service supports recovery from unexpected crash. After `witness` service finish running, we can see `witness` from `witness` table.
+The `witness` service supports recovery from unexpected crash. After `witness` service finish running, we can see `witness` from `witness` table and user proofs from `userproof` table.
 
-One witness batch contains 700 users whose assets number is less or equal than 50, and 92 users whose assets number is larger than 50.
+One witness batch contains 1380 users whose assets number is less or equal than 50, and 200 users whose assets number is larger than 50.
 
 ### Push Task to Redis
 The `db_tool` cli provide a subcommand called `push_task_to_redis` which can be used for push proof generating tasks to redis after all the witnesses data are generated. The provers will fetch the proof-generating tasks from redis, update the witness data status into `received`, then generate the proof, and update the witness data status into `finished`.
@@ -98,8 +103,8 @@ The `prover` service is used to generate zk proof and supports running in parall
   "Redis": {
     "Host": "127.0.0.1:6379",
   },
-  "ZkKeyName": ["/server/zkmerkle-proof-of-solvency/src/keygen/zkpor50_580", "/server/zkmerkle-proof-of-solvency/src/keygen/zkpor350_128"],
-  "AssetsCountTiers": [50, 350]
+  "ZkKeyName": ["/server/zkmerkle-proof-of-solvency/src/keygen/zkpor50_1380", "/server/zkmerkle-proof-of-solvency/src/keygen/zkpor500_200"],
+  "AssetsCountTiers": [50, 500]
 }
 ```
 
@@ -111,7 +116,7 @@ Where
   - `Host`: `redis` service listen addr;
   - `Type`: only support `node` type
 - `ZkKeyName`: the list of key names generated by `keygen` service
-- `AssetsCountTiers`: The list of asset count tiers, each corresponding to a key name in `ZkKeyName` 
+- `AssetsCountTiers`: The list of asset count tiers, each corresponding to a key name in `ZkKeyName`
 
 Run the following command to start `prover` service:
 ```shell
@@ -124,42 +129,6 @@ To run `prover` service in parallel, just repeat executing above commands.
 
 After the whole `prover` service finished, we can see batch zk proof in `proof` table.
 
-### Generate user proof
-
-The `userproof` service is used to generate and persist user merkle proof. It uses `userproof/config/config.json` as config file, and the sample config is as follows:
-```json
-{
-  "MysqlDataSource" : "zkpos:zkpos@123@tcp(127.0.0.1:3306)/zkpos?parseTime=true",
-  "UserDataFile": "/server/data/20230118",
-  "DbSuffix": "0",
-  "TreeDB": {
-    "Driver": "redis",
-    "Option": {
-      "Addr": "127.0.0.1:6666"
-    }
-  }
-}
-```
-
-Where
-
-- `MysqlDataSource`: this is the mysql config;
-- `UserDataFile`: the directory which contains all users balance sheet files;
-- `DbSuffix`: this suffix will be appended to the ending of table name, such as `proof0`, `witness0` table;
-- `TreeDB`:
-  - `Driver`: `redis` means account tree use kvrocks as its storage engine;
-  - `Option`:
-    - `Addr`: `kvrocks` service listen address
-
-Run the following command to run `userproof` service:
-```shell
-cd userproof; go run main.go
-```
-
-After `userproof` service finishes running, we can see every user proof from `userproof` table.
-
-The performance: about 10k users proof generation per second in a 128GB memory and 32 core virtual machine.
-
 ### Verifier
 
 The `verifier` service is used to verify batch proof and single user proof.
@@ -169,8 +138,8 @@ The service use `config.json` as its config file, and the sample config is as fo
 ```json
 {
   "ProofTable": "config/proof.csv",
-  "ZkKeyName": ["config/zkpor50_580", "config/zkpor350_128"],
-  "AssetsCountTiers": [50, 350],
+  "ZkKeyName": ["config/zkpor50_1380", "config/zkpor500_200"],
+  "AssetsCountTiers": [50, 500],
   "CexAssetsInfo": [{"TotalEquity":219971568487,"TotalDebt":9789219,"BasePrice":24620000000},{"TotalEquity":8664493444,"TotalDebt":122580,"BasePrice":1682628000000},{"TotalEquity":67463930749983,"TotalDebt":16127314913,"BasePrice":100000000},{"TotalEquity":68358645578,"TotalDebt":130187,"BasePrice":121377000000},{"TotalEquity":590353015932,"TotalDebt":0,"BasePrice":598900000},{"TotalEquity":255845425858,"TotalDebt":13839361,"BasePrice":6541000000},{"TotalEquity":0,"TotalDebt":0,"BasePrice":99991478},{"TotalEquity":267958065914051,"TotalDebt":501899265949,"BasePrice":100000000},{"TotalEquity":124934670143615,"TotalDebt":1422964747,"BasePrice":34500000}]
 }
 ```
@@ -209,12 +178,7 @@ cd verifier; go run main.go -user
 
 ### dbtool command
 
-Run the following command to remove only kvrocks data:
-```shell
-cd src/dbtool; go run main.go -only_delete_kvrocks
-```
-
-Run the following command to delete kvrocks data and mysql:
+Run the following command to delete mysql and redis data:
 ```shell
 cd src/dbtool; go run main.go -delete_all
 ```
@@ -233,18 +197,3 @@ Run the following command to query witness data which is the input of circuit:
 ```shell
 cd src/dbtool; go run main.go -query_witness_data 9
 ```
-
-### Check data correctness
-
-#### check account tree construct correctness
-`userproof` service provides a command flag `-memory_tree` which can construct account tree in memory
-using user balance sheet.
-
-Run the following command:
-```shell
-cd userproof; go run main.go -memory_tree
-```
-
-Compare the account tree root in the output log with the account tree root by `witness` service, if matches, then the account tree is correctly constructed.
-
-**Note: when `userproof` service runs in the `-memory_tree` mode, its performance is about 75k per minute, so 3000w accounts will take about ~7 hours**
