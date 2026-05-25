@@ -1,3 +1,4 @@
+# CI pipeline for zkmerkle-proof-of-solvency
 name: CI
 
 on:
