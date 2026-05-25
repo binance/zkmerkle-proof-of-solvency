@@ -31,7 +31,10 @@ func TestMockProver(t *testing.T) {
 		},
 	)
 	t.Log("TestWitnessModel")
-	dbUri := "zkpos:zkpos@123@tcp(127.0.0.1:3306)/zkpos?parseTime=true"
+	dbUri := os.Getenv("TEST_MYSQL_DSN")
+	if dbUri == "" {
+		dbUri = "zkpos:zkpos@123@tcp(127.0.0.1:3306)/zkpos?parseTime=true"
+	}
 	db, err := gorm.Open(mysql.Open(dbUri), &gorm.Config{Logger: newLogger})
 	if err != nil {
 		t.Errorf("error: %s\n", err.Error())
@@ -75,8 +78,12 @@ func TestMockProver(t *testing.T) {
 	witessStatusList := []int64{witness.StatusPublished, witness.StatusReceived}
 	taskQueueName := "por_batch_task_queue_test"
 	ctx := context.Background()
+	redisAddr := os.Getenv("TEST_REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "127.0.0.1:6379"
+	}
 	redisCli := redis.NewClient(&redis.Options{
-		Addr: "127.0.0.1:6379",
+		Addr: redisAddr,
 	})
 	_, err = redisCli.Del(ctx, taskQueueName).Result()
 	if err == nil {
@@ -119,7 +126,7 @@ func TestMockProver(t *testing.T) {
 			Host     string
 			Password string
 		} {
-			Host: "127.0.0.1:6379",
+			Host: redisAddr,
 		},
 	}
 	p := NewProver(config)

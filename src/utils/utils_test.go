@@ -13,14 +13,16 @@ import (
 )
 
 func ComputeAssetsCommitmentForTest(userAssets []AccountAsset) []byte {
-	nEles := (AssetCounts*5 + 2) / 3
+	target := GetAssetsCountOfUser(userAssets)
+	nEles := (target*6 + 2) / 3
 	flattenUserAssets := make([]uint64, 3*nEles)
-	for i := 0; i < AssetCounts; i++ {
-		flattenUserAssets[5*i] = userAssets[i].Equity
-		flattenUserAssets[5*i+1] = userAssets[i].Debt
-		flattenUserAssets[5*i+2] = userAssets[i].Loan
-		flattenUserAssets[5*i+3] = userAssets[i].Margin
-		flattenUserAssets[5*i+4] = userAssets[i].PortfolioMargin
+	for i := 0; i < target; i++ {
+		flattenUserAssets[6*i] = uint64(userAssets[i].Index)
+		flattenUserAssets[6*i+1] = userAssets[i].Equity
+		flattenUserAssets[6*i+2] = userAssets[i].Debt
+		flattenUserAssets[6*i+3] = userAssets[i].Loan
+		flattenUserAssets[6*i+4] = userAssets[i].Margin
+		flattenUserAssets[6*i+5] = userAssets[i].PortfolioMargin
 	}
 
 	hasher := poseidon.NewPoseidon()
@@ -39,24 +41,44 @@ func ComputeAssetsCommitmentForTest(userAssets []AccountAsset) []byte {
 }
 
 func TestComputeUserAssetsCommitment(t *testing.T) {
-	userAssets := make([]AccountAsset, AssetCounts)
 	testUserAssets1 := make([]AccountAsset, 10)
 	for i := 0; i < 10; i++ {
-		testUserAssets1[i].Index = uint16(3 * i)
+		testUserAssets1[i].Index = uint16(3*i + 30)
 		testUserAssets1[i].Equity = uint64(i*10 + 1000)
 		testUserAssets1[i].Debt = uint64(i*10 + 500)
 		testUserAssets1[i].Loan = uint64(i*10 + 100)
 		testUserAssets1[i].Margin = uint64(i*10 + 100)
 		testUserAssets1[i].PortfolioMargin = uint64(i*10 + 100)
-
-		userAssets[testUserAssets1[i].Index].Equity = testUserAssets1[i].Equity
-		userAssets[testUserAssets1[i].Index].Debt = testUserAssets1[i].Debt
-		userAssets[testUserAssets1[i].Index].Loan = testUserAssets1[i].Loan
-		userAssets[testUserAssets1[i].Index].Margin = testUserAssets1[i].Margin
-		userAssets[testUserAssets1[i].Index].PortfolioMargin = testUserAssets1[i].PortfolioMargin
 	}
-	for i := 0; i < AssetCounts; i++ {
-		userAssets[i].Index = uint16(i)
+	target := GetAssetsCountOfUser(testUserAssets1)
+	paddingCounts := target - len(testUserAssets1)
+	userAssets := make([]AccountAsset, target)
+	currentPaddingCounts := 0
+	currentAssetIndex := 0
+	index := 0
+	for i := 0; i < len(testUserAssets1); i++ {
+		if currentPaddingCounts < paddingCounts {
+			for j := currentAssetIndex; j < int(testUserAssets1[i].Index); j++ {
+				userAssets[index].Index = uint16(j)
+				currentPaddingCounts++
+				index++
+				if currentPaddingCounts >= paddingCounts {
+					break
+				}
+			}
+		}
+		userAssets[index].Index = testUserAssets1[i].Index
+		userAssets[index].Equity = testUserAssets1[i].Equity
+		userAssets[index].Debt = testUserAssets1[i].Debt
+		userAssets[index].Loan = testUserAssets1[i].Loan
+		userAssets[index].Margin = testUserAssets1[i].Margin
+		userAssets[index].PortfolioMargin = testUserAssets1[i].PortfolioMargin
+		index++
+		currentAssetIndex = int(testUserAssets1[i].Index) + 1
+	}
+	for i := index; i < target; i++ {
+		userAssets[i].Index = uint16(currentAssetIndex)
+		currentAssetIndex++
 	}
 	expectHash := ComputeAssetsCommitmentForTest(userAssets)
 
@@ -68,29 +90,31 @@ func TestComputeUserAssetsCommitment(t *testing.T) {
 	}
 
 	// case 2
-	userAssets = make([]AccountAsset, AssetCounts)
-	for i := 0; i < AssetCounts; i++ {
+	testUserAssets2 := make([]AccountAsset, 100)
+	target = GetAssetsCountOfUser(testUserAssets2)
+	userAssets = make([]AccountAsset, target)
+	for i := 0; i < target; i++ {
 		userAssets[i].Index = uint16(i)
 	}
-	for i := 0; i < 10; i++ {
-		testUserAssets1[i].Index = uint16(3*i) + 2
-		testUserAssets1[i].Equity = uint64(i*10 + 1000)
-		testUserAssets1[i].Debt = uint64(i*10 + 500)
-		testUserAssets1[i].Loan = uint64(i*10 + 100)
-		testUserAssets1[i].Margin = uint64(i*10 + 100)
-		testUserAssets1[i].PortfolioMargin = uint64(i*10 + 100)
+	for i := 0; i < 100; i++ {
+		testUserAssets2[i].Index = uint16(3*i) + 2
+		testUserAssets2[i].Equity = uint64(i*10 + 1000)
+		testUserAssets2[i].Debt = uint64(i*10 + 500)
+		testUserAssets2[i].Loan = uint64(i*10 + 100)
+		testUserAssets2[i].Margin = uint64(i*10 + 100)
+		testUserAssets2[i].PortfolioMargin = uint64(i*10 + 100)
 
-		userAssets[testUserAssets1[i].Index].Equity = testUserAssets1[i].Equity
-		userAssets[testUserAssets1[i].Index].Debt = testUserAssets1[i].Debt
-		userAssets[testUserAssets1[i].Index].Loan = testUserAssets1[i].Loan
-		userAssets[testUserAssets1[i].Index].Margin = testUserAssets1[i].Margin
-		userAssets[testUserAssets1[i].Index].PortfolioMargin = testUserAssets1[i].PortfolioMargin
+		userAssets[testUserAssets2[i].Index].Equity = testUserAssets2[i].Equity
+		userAssets[testUserAssets2[i].Index].Debt = testUserAssets2[i].Debt
+		userAssets[testUserAssets2[i].Index].Loan = testUserAssets2[i].Loan
+		userAssets[testUserAssets2[i].Index].Margin = testUserAssets2[i].Margin
+		userAssets[testUserAssets2[i].Index].PortfolioMargin = testUserAssets2[i].PortfolioMargin
 	}
 
 	expectHash = ComputeAssetsCommitmentForTest(userAssets)
 
 	hasher.Reset()
-	actualHash = ComputeUserAssetsCommitment(&hasher, testUserAssets1)
+	actualHash = ComputeUserAssetsCommitment(&hasher, testUserAssets2)
 	if string(expectHash) != string(actualHash) {
 		t.Errorf("not match: %x:%x\n", expectHash, actualHash)
 	}
