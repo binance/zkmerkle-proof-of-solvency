@@ -340,7 +340,10 @@ func (p *Prover) LoadSnarkParamsOnce(targerAssetsCount int) {
 	}
 	buf = bytes.NewBuffer(pkFromFile)
 	p.ProvingKey = groth16.NewProvingKey(ecc.BN254)
-	n, err = p.ProvingKey.UnsafeReadFrom(buf)
+	// Use the safe ReadFrom (which performs subgroup membership checks) to be
+	// consistent with the verifier and reject tampered or malformed proving
+	// keys. See security report M-02.
+	n, err = p.ProvingKey.ReadFrom(buf)
 	if err != nil {
 		panic("provingKey loading error:" + err.Error())
 	}
