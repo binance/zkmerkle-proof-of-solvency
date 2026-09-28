@@ -106,4 +106,4 @@ jobs:
           TEST_MYSQL_DSN: "zkpos:zkpos@123@tcp(127.0.0.1:3306)/zkpos?parseTime=true"
           TEST_REDIS_ADDR: "127.0.0.1:6379"
         run: |
-          go test ./src/prover/prover/ -v -run TestMockProver -timeout 300s
+          go test ./src/prover/prover/ -v -run "TestMockProver|TestReadProvingKeyRejectsPointsOutsideSubgroup" -timeout 300s
