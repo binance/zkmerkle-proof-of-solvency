@@ -115,14 +115,32 @@ func IsAssetEmpty(ua *AccountAsset) bool {
 	return false
 }
 
-func GetNonEmptyAssetsCountOfUser(assets []AccountAsset) int {
+// CountNonEmptyAssets returns the exact number of non-empty asset entries.
+func CountNonEmptyAssets(assets []AccountAsset) int {
 	count := 0
-	targetCounts := 0
-	for _, v := range assets {
-		if !IsAssetEmpty(&v) {
-			count += 1
+	for i := range assets {
+		if !IsAssetEmpty(&assets[i]) {
+			count++
 		}
 	}
+	return count
+}
+
+// CountUsersByAssetCount maps the number of non-empty assets a user holds
+// to the number of users holding exactly that many.
+func CountUsersByAssetCount(accounts map[int][]AccountInfo) map[int]int {
+	stats := make(map[int]int)
+	for _, tierAccounts := range accounts {
+		for i := range tierAccounts {
+			stats[CountNonEmptyAssets(tierAccounts[i].Assets)]++
+		}
+	}
+	return stats
+}
+
+func GetNonEmptyAssetsCountOfUser(assets []AccountAsset) int {
+	count := CountNonEmptyAssets(assets)
+	targetCounts := 0
 	for _, v := range AssetCountsTiers {
 		if count <= v {
 			targetCounts = v
