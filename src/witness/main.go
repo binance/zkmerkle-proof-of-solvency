@@ -10,6 +10,7 @@ import (
 	"os"
 	"runtime"
 	"sort"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -25,6 +26,8 @@ import (
 func main() {
 	remotePasswdConfig := flag.String("remote_password_config", "", "fetch password from aws secretsmanager")
 	witnessDoneMarker := flag.String("witness_done_marker", "", "path to marker file created when witness generation completes")
+	statsAssetsMapping := flag.Bool("stats_assets_mapping", false, "only print the mapping of asset count to user count, then exit")
+	statsOutput := flag.String("stats_output", "asset_user_stats.json", "path of the json file written by -stats_assets_mapping")
 	flag.Parse()
 	witnessConfig := &config.Config{}
 	content, err := ioutil.ReadFile("config/config.json")
@@ -35,7 +38,7 @@ func main() {
 	if err != nil {
 		panic(err.Error())
 	}
-	if *remotePasswdConfig != "" {
+	if *remotePasswdConfig != "" && !*statsAssetsMapping {
 		s, err := utils.GetMysqlSource(witnessConfig.MysqlDataSource, *remotePasswdConfig)
 		if err != nil {
 			panic(err.Error())
@@ -46,6 +49,14 @@ func main() {
 	accounts, cexAssetsInfo, err := utils.ParseUserDataSet(witnessConfig.UserDataFile)
 	if err != nil {
 		panic(err.Error())
+	}
+
+	if *statsAssetsMapping {
+		// Must run before padding so that padded dummy accounts are not counted.
+		if err := printAssetUserStats(accounts, *statsOutput); err != nil {
+			panic(err.Error())
+		}
+		return
 	}
 
 	totalAccountNum := 0
@@ -123,6 +134,37 @@ func main() {
 		userProofService.Run()
 	}()
 	wg.Wait()
+}
+
+// printAssetUserStats prints the asset count -> user count mapping in ascending
+// order of asset count and writes it to outputPath as json.
+func printAssetUserStats(accounts map[int][]utils.AccountInfo, outputPath string) error {
+	stats := utils.CountUsersByAssetCount(accounts)
+	assetCounts := make([]int, 0, len(stats))
+	for k := range stats {
+		assetCounts = append(assetCounts, k)
+	}
+	sort.Ints(assetCounts)
+
+	fmt.Println("asset_count\tuser_count")
+	total := 0
+	jsonStats := make(map[string]int, len(stats))
+	for _, k := range assetCounts {
+		fmt.Printf("%d\t%d\n", k, stats[k])
+		total += stats[k]
+		jsonStats[strconv.Itoa(k)] = stats[k]
+	}
+	fmt.Println("total users:", total)
+
+	content, err := json.MarshalIndent(jsonStats, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(outputPath, content, 0644); err != nil {
+		return err
+	}
+	fmt.Println("stats written to", outputPath)
+	return nil
 }
 
 // buildAccountTree computes hashes for all accounts and sets them into the tree,
