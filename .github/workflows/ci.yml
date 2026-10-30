@@ -30,6 +30,7 @@ jobs:
       - name: Run utils tests
         run: |
           go test ./src/utils/ -v -run "TestComputeUserAssetsCommitment|TestParseUserDataSet|TestParseCexAssetInfoFromFile|TestParseTiers" -timeout 120s
+          go test ./src/verifier/ -v -run TestSampleUserConfigVerifies -timeout 120s
 
   test-merkletree:
     runs-on: ubuntu-latest
