@@ -11,7 +11,7 @@ require (
 	github.com/go-sql-driver/mysql v1.8.1
 	github.com/gocarina/gocsv v0.0.0-20230123225133-763e25b40669
 	github.com/klauspost/compress v1.18.7
-	github.com/redis/go-redis/v9 v9.6.1
+	github.com/redis/go-redis/v9 v9.6.3
 	github.com/shopspring/decimal v1.3.1
 	gorm.io/driver/mysql v1.4.7
 	gorm.io/gorm v1.25.0
