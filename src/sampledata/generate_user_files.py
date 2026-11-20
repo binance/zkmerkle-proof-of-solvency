@@ -98,7 +98,6 @@ def generate_data(id, num, invalid_num):
             
         else:
             target_tokens_count = total_tokens
-            debt_value = 0
             for p in range(target_tokens_count):
                 token_name = token_names[p]
                 roundPrecision = 8
@@ -108,20 +107,30 @@ def generate_data(id, num, invalid_num):
                 vl_token = round(equity / 2, roundPrecision)
                 m_token = round(equity / 4, roundPrecision)
                 pm_token = round(equity / 8, roundPrecision)
-                debt_value += get_debt_value(token_name, vl_token, m_token, pm_token, token2vltiersratio, token2margintiersratio, token2pmtiersratio, token2price)
-                real_content.extend([str(equity), str(0), str(0), str(vl_token), str(m_token), str(pm_token)])
 
-            average_debt_value = debt_value // target_tokens_count
-            for p in range(target_tokens_count):
-                debt_token = get_debt_token_by_value(token_names[p], average_debt_value, token2price)
-                roundPrecision = 8
-                if token_names[p] in SpecialToken:
-                    roundPrecision = 2
+                # Calculate debt from this asset's own collateral value. Do not
+                # spread one asset's collateral value across unrelated tokens.
+                debt_value = get_debt_value(
+                    token_name,
+                    vl_token,
+                    m_token,
+                    pm_token,
+                    token2vltiersratio,
+                    token2margintiersratio,
+                    token2pmtiersratio,
+                    token2price,
+                )
+                debt_token = get_debt_token_by_value(token_name, debt_value, token2price)
                 debt_token = round(debt_token * 0.99, roundPrecision)
-                real_content[3 + 6 * p] = str(debt_token)
 
-            for p in range(total_tokens-target_tokens_count):
-                real_content.extend(["0.0", "0.0", "0.0", "0.0", "0.0", "0.0"])
+                real_content.extend([
+                    str(equity),
+                    str(debt_token),
+                    str(equity - debt_token),
+                    str(vl_token),
+                    str(m_token),
+                    str(pm_token),
+                ])
         
         real_content.append("0.0")
         content.append(real_content)
