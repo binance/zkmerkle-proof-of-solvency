@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"strconv"
@@ -40,6 +41,15 @@ type Prover struct {
 
 	CurrentSnarkParamsInUse int
 	TaskQueueName string
+}
+
+func readProvingKey(r io.Reader) (groth16.ProvingKey, int64, error) {
+	provingKey := groth16.NewProvingKey(ecc.BN254)
+	n, err := provingKey.ReadFrom(r)
+	if err != nil {
+		return nil, n, err
+	}
+	return provingKey, n, nil
 }
 
 func NewProver(config *config.Config) *Prover {
@@ -339,8 +349,7 @@ func (p *Prover) LoadSnarkParamsOnce(targerAssetsCount int) {
 		panic("provingKey file load error:" + err.Error())
 	}
 	buf = bytes.NewBuffer(pkFromFile)
-	p.ProvingKey = groth16.NewProvingKey(ecc.BN254)
-	n, err = p.ProvingKey.UnsafeReadFrom(buf)
+	p.ProvingKey, n, err = readProvingKey(buf)
 	if err != nil {
 		panic("provingKey loading error:" + err.Error())
 	}
