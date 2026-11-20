@@ -6,7 +6,7 @@ Binance's zero-knowledge Proof of Reserves system. Uses Groth16 zk-SNARKs (gnark
 
 **Module**: `github.com/binance/zkmerkle-proof-of-solvency`
 
-**Go version**: 1.22 (toolchain 1.23.1)
+**Go version**: 1.25
 
 
 ## Architecture & Data Flow
